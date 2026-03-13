@@ -30,6 +30,7 @@ export default function DashboardPage() {
     const router = useRouter();
 
     const [todosFuncionarios, setTodosFuncionarios] = useState<Funcionario[]>([]);
+    const [funcionariosFiltrados, setFuncionariosFiltrados] = useState<Funcionario[]>([]);
     const [funcionariosPagina, setFuncionariosPagina] = useState<Funcionario[]>([]);
     const [loading, setLoading] = useState(true);
     const [loadingPagina, setLoadingPagina] = useState(false);
@@ -40,9 +41,8 @@ export default function DashboardPage() {
     // Paginação
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [totalPaginas, setTotalPaginas] = useState(1);
-    const [totalFuncionarios, setTotalFuncionarios] = useState(0);
 
-    // Dados adicionais por funcionário da página atual
+    // Dados adicionais por funcionário da PÁGINA ATUAL apenas
     const [saldos, setSaldos] = useState<Record<string, string>>({});
     const [ultimasBatidas, setUltimasBatidas] = useState<Record<string, Batida>>({});
     const [loadingDados, setLoadingDados] = useState<Record<string, boolean>>({});
@@ -59,7 +59,7 @@ export default function DashboardPage() {
     // Lista única de departamentos para o select
     const [departamentos, setDepartamentos] = useState<string[]>([]);
 
-    // Cache de batidas (carregado uma única vez)
+    // Cache de batidas (carregado uma única vez para todas as páginas)
     const [todasBatidas, setTodasBatidas] = useState<Batida[]>([]);
     const [batidasCarregadas, setBatidasCarregadas] = useState(false);
 
@@ -72,7 +72,7 @@ export default function DashboardPage() {
         carregarFuncionarios();
     }, [isAuthenticated, router]);
 
-    // Carregar batidas APÓS carregar funcionários
+    // Carregar batidas APÓS carregar funcionários (uma única vez)
     useEffect(() => {
         if (token && empresa && !loading && todosFuncionarios.length > 0 && !batidasCarregadas) {
             carregarTodasBatidas();
@@ -88,12 +88,12 @@ export default function DashboardPage() {
         }
     }, [dataInicio, dataFim]);
 
-    // Atualizar funcionários da página quando mudar página ou filtros
+    // Aplicar filtros e paginar quando os dados mudarem
     useEffect(() => {
         if (todosFuncionarios.length > 0) {
             aplicarFiltrosEPaginar();
         }
-    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios]);
+    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, saldos]);
 
     // Extrair departamentos únicos quando os funcionários são carregados
     useEffect(() => {
@@ -108,6 +108,17 @@ export default function DashboardPage() {
             setDepartamentos(sortedDeps);
         }
     }, [todosFuncionarios]);
+
+    // Carregar saldos dos funcionários da página atual
+    useEffect(() => {
+        if (funcionariosPagina.length > 0) {
+            funcionariosPagina.forEach(func => {
+                if (!saldos[func.id] && !loadingDados[func.id]) {
+                    carregarDadosFuncionario(func);
+                }
+            });
+        }
+    }, [funcionariosPagina]);
 
     const carregarFuncionarios = async (forceRefresh = false) => {
         if (!token || !empresa) return;
@@ -133,7 +144,6 @@ export default function DashboardPage() {
             }
 
             setTodosFuncionarios(data.listaDeFuncionarios || []);
-            setTotalFuncionarios(data.listaDeFuncionarios?.length || 0);
             setUltimaAtualizacao(new Date());
 
             const elapsedTime = Date.now() - startTime;
@@ -156,48 +166,6 @@ export default function DashboardPage() {
             }
         } finally {
             setLoading(false);
-        }
-    };
-
-    const carregarTodasBatidas = async () => {
-        if (!token || !empresa) return;
-
-        try {
-            console.log('Carregando todas as batidas...');
-            let todas: Batida[] = [];
-            let pagina = 1;
-            let totalPaginasAPI = 1;
-
-            // Primeira requisição para saber total de páginas
-            const primeiraUrl = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=1`;
-            const primeiraResponse = await fetch(primeiraUrl);
-
-            if (primeiraResponse.ok) {
-                const primeiraData = await primeiraResponse.json();
-                todas = [...primeiraData.listaDeBatidas];
-                totalPaginasAPI = primeiraData.totalPaginas || 1;
-
-                // Buscar páginas restantes em paralelo
-                if (totalPaginasAPI > 1) {
-                    const promises = [];
-                    for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
-                        const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
-                        promises.push(fetch(url).then(res => res.json()));
-                    }
-
-                    const resultados = await Promise.all(promises);
-                    resultados.forEach(data => {
-                        todas = [...todas, ...data.listaDeBatidas];
-                    });
-                }
-
-                console.log(`Total de batidas carregadas: ${todas.length}`);
-                setTodasBatidas(todas);
-                setBatidasCarregadas(true);
-            }
-
-        } catch (err) {
-            console.error('Erro ao carregar todas as batidas:', err);
         }
     };
 
@@ -226,34 +194,56 @@ export default function DashboardPage() {
         }
     };
 
-    // Processar batidas para todos os funcionários da página atual
-    useEffect(() => {
-        if (batidasCarregadas && funcionariosPagina.length > 0 && todasBatidas.length > 0) {
-            // Criar um mapa de última batida por matrícula
-            const batidasPorMatricula: Record<string, Batida> = {};
+    const carregarTodasBatidas = async () => {
+        if (!token || !empresa) return;
 
-            todasBatidas.forEach((batida: Batida) => {
-                const matricula = batida.matriculaFuncionario;
-                if (!batidasPorMatricula[matricula] ||
-                    new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula].data}T${batidasPorMatricula[matricula].hora}`)) {
-                    batidasPorMatricula[matricula] = batida;
+        try {
+            console.log('Carregando todas as batidas...');
+            let todas: Batida[] = [];
+            let pagina = 1;
+            let totalPaginasAPI = 1;
+
+            const primeiraUrl = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=1`;
+            const primeiraResponse = await fetch(primeiraUrl);
+
+            if (primeiraResponse.ok) {
+                const primeiraData = await primeiraResponse.json();
+                todas = [...primeiraData.listaDeBatidas];
+                totalPaginasAPI = primeiraData.totalPaginas || 1;
+
+                if (totalPaginasAPI > 1) {
+                    const promises = [];
+                    for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
+                        const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
+                        promises.push(fetch(url).then(res => res.json()));
+                    }
+
+                    const resultados = await Promise.all(promises);
+                    resultados.forEach(data => {
+                        todas = [...todas, ...data.listaDeBatidas];
+                    });
                 }
-            });
 
-            setUltimasBatidas(batidasPorMatricula);
-        }
-    }, [batidasCarregadas, todasBatidas, funcionariosPagina]);
+                console.log(`Total de batidas carregadas: ${todas.length}`);
+                setTodasBatidas(todas);
+                setBatidasCarregadas(true);
 
-    // Carregar saldos dos funcionários da página atual
-    useEffect(() => {
-        if (funcionariosPagina.length > 0) {
-            funcionariosPagina.forEach(func => {
-                if (!saldos[func.id] && !loadingDados[func.id]) {
-                    carregarDadosFuncionario(func);
-                }
-            });
+                // Processar últimas batidas para TODOS os funcionários
+                const batidasPorMatricula: Record<string, Batida> = {};
+                todas.forEach((batida: Batida) => {
+                    const matricula = batida.matriculaFuncionario;
+                    if (!batidasPorMatricula[matricula] ||
+                        new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula].data}T${batidasPorMatricula[matricula].hora}`)) {
+                        batidasPorMatricula[matricula] = batida;
+                    }
+                });
+                setUltimasBatidas(batidasPorMatricula);
+            }
+
+        } catch (err) {
+            console.error('Erro ao carregar todas as batidas:', err);
         }
-    }, [funcionariosPagina]);
+    };
 
     const aplicarFiltrosEPaginar = useCallback(() => {
         setLoadingPagina(true);
@@ -273,16 +263,18 @@ export default function DashboardPage() {
             );
         }
 
-        // Filtrar por saldo (positivo/negativo)
+        // Filtrar por saldo (usando os saldos já carregados da página)
         if (filtroSaldo !== 'todos') {
             filtrados = filtrados.filter(func => {
                 const saldo = saldos[func.id];
-                if (!saldo) return false;
+                if (!saldo) return true; // Se não tem saldo ainda, mantém (vai aparecer com placeholder)
 
                 const isNegative = saldo.startsWith('-');
                 return filtroSaldo === 'positivo' ? !isNegative : isNegative;
             });
         }
+
+        setFuncionariosFiltrados(filtrados);
 
         // Calcular total de páginas
         const total = filtrados.length;
@@ -349,6 +341,7 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-background">
+            {/* Topbar */}
             <div className="bg-card border-b border-border sticky top-0 z-10">
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-16">
@@ -607,9 +600,7 @@ export default function DashboardPage() {
                                                         )}
                                                     </td>
                                                     <td className="p-4">
-                                                        {carregando ? (
-                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                                                        ) : ultimaBatida ? (
+                                                        {ultimaBatida ? (
                                                             <div className="flex items-center gap-2">
                                                                 <Clock className="h-4 w-4 text-muted-foreground" />
                                                                 <span className="text-sm text-foreground">
@@ -632,11 +623,11 @@ export default function DashboardPage() {
                                 </table>
                             </div>
 
-                            {totalFuncionarios > 0 && (
+                            {funcionariosFiltrados.length > 0 && (
                                 <div className="flex items-center justify-between px-4 py-4 border-t border-border">
                                     <div className="text-sm text-muted-foreground">
                                         Mostrando <span className="font-medium">{funcionariosPagina.length}</span> de{' '}
-                                        <span className="font-medium">{totalFuncionarios}</span> funcionários
+                                        <span className="font-medium">{funcionariosFiltrados.length}</span> funcionários
                                         {filtroNome || filtroDepartamento || filtroSaldo !== 'todos' ? ' (filtrados)' : ''}
                                     </div>
                                     <div className="flex gap-2">

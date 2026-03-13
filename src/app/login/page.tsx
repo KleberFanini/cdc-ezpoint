@@ -74,8 +74,6 @@ export default function LoginPage() {
                             id="empresa"
                             type="text"
                             placeholder="cdc"
-                            value={empresa}
-                            onChange={(e) => setEmpresa(e.target.value)}
                             required
                         />
                     </div>
@@ -86,8 +84,6 @@ export default function LoginPage() {
                             id="usuario"
                             type="text"
                             placeholder="cdc"
-                            value={usuario}
-                            onChange={(e) => setUsuario(e.target.value)}
                             required
                         />
                     </div>
@@ -98,8 +94,6 @@ export default function LoginPage() {
                             id="senha"
                             type="password"
                             placeholder="••••••••"
-                            value={senha}
-                            onChange={(e) => setSenha(e.target.value)}
                             required
                         />
                     </div>

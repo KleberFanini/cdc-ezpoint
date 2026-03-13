@@ -1,0 +1,21 @@
+---
+version: '1.0'
+services:
+  - name: cdc-ezpoint
+    type: dockerfile
+    dockerfile: ./Dockerfile
+    ports:
+      - port: 3000
+    env:
+      - name: PORT
+        value: 3000
+      - name: NODE_ENV
+        value: production
+      - name: NEXT_PUBLIC_EZPOINT_API_URL
+        value: https://api.ezpointweb.com.br/ezweb-ws
+      - name: EZPOINT_EMPRESA
+        value: cdc
+      - name: EZPOINT_USUARIO
+        value: cdc
+      - name: EZPOINT_SENHA
+        value: cdc%2B%25842585

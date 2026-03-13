@@ -41,8 +41,12 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-background p-4">
             <div className="w-full max-w-sm space-y-6">
                 <div className="text-center space-y-2">
-                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary font-bold text-primary-foreground text-lg">
-                        CDC
+                    <div className="mx-auto flex h-50 w-50 items-center justify-center font-bold text-primary-foreground text-lg">
+                        <img
+                            src="/logo.png"
+                            alt="CDC + EZPoint Logo"
+                            className="h-50 w-50 object-contain"
+                        />
                     </div>
                     <h1 className="text-2xl font-bold text-foreground">CDC + EZPoint</h1>
                     <p className="text-sm text-muted-foreground">Entre com suas credenciais para acessar o painel</p>

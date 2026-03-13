@@ -39,23 +39,28 @@ export default function DashboardPage() {
     const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [totalPaginas, setTotalPaginas] = useState(1);
-    const [saldos, setSaldos] = useState<Record<string, string>>({});
+
+    // 🔥 TODOS os saldos em um único objeto
+    const [todosSaldos, setTodosSaldos] = useState<Record<string, string>>({});
+    const [saldosCarregados, setSaldosCarregados] = useState(false);
+    const [loadingSaldos, setLoadingSaldos] = useState(false);
+
     const [ultimasBatidas, setUltimasBatidas] = useState<Record<string, Batida>>({});
-    const [loadingDados, setLoadingDados] = useState<Record<string, boolean>>({});
+    const [loadingBatidas, setLoadingBatidas] = useState(false);
     const [filtroNome, setFiltroNome] = useState('');
     const [filtroDepartamento, setFiltroDepartamento] = useState('');
     const [filtroSaldo, setFiltroSaldo] = useState('todos');
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 2), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(new Date(), 'yyyy-MM-dd'));
     const [departamentos, setDepartamentos] = useState<string[]>([]);
-    const [todasBatidas, setTodasBatidas] = useState<Batida[]>([]);
-    const [batidasCarregadas, setBatidasCarregadas] = useState(false);
 
     const carregarFuncionarios = useCallback(async (forceRefresh = false) => {
         if (!token || !empresa) return;
         setLoading(true);
         setError('');
         setUsandoCache(false);
+        setSaldosCarregados(false);
+        setTodosSaldos({});
 
         try {
             const url = `/api/funcionarios?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&ocultarDemitidos=true${forceRefresh ? '&forceRefresh=true' : ''}`;
@@ -65,8 +70,17 @@ export default function DashboardPage() {
             if (!response.ok) throw new Error(data.error || `Erro HTTP: ${response.status}`);
             if (data._fallback) setUsandoCache(true);
 
-            setTodosFuncionarios(data.listaDeFuncionarios || []);
+            const funcionarios = data.listaDeFuncionarios || [];
+            setTodosFuncionarios(funcionarios);
             setUltimaAtualizacao(new Date());
+
+            // Extrair departamentos únicos
+            const deps = new Set<string>();
+            funcionarios.forEach((func: Funcionario) => {
+                if (func.departamento) deps.add(func.departamento);
+            });
+            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
+
         } catch (err: any) {
             console.error('Erro:', err);
             if (err.message?.includes('502') || err.message?.includes('503')) {
@@ -81,120 +95,130 @@ export default function DashboardPage() {
         }
     }, [token, empresa, logout]);
 
-    const carregarDadosFuncionario = useCallback(async (funcionario: Funcionario) => {
-        if (!token || !empresa) return;
+    // 🔥 Carregar TODOS os saldos de uma vez (em lotes)
+    const carregarTodosSaldos = useCallback(async () => {
+        if (!token || !empresa || todosFuncionarios.length === 0 || saldosCarregados) return;
 
-        setLoadingDados(prev => ({ ...prev, [funcionario.id]: true }));
+        setLoadingSaldos(true);
 
         try {
-            const espelhoUrl = `/api/espelho-ponto?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&idFuncionario=${funcionario.id}&dataInicio=${dataInicio}&dataFim=${dataFim}`;
-            const espelhoResponse = await fetch(espelhoUrl);
-            if (espelhoResponse.ok) {
-                const espelhoData = await espelhoResponse.json();
-                setSaldos(prev => ({ ...prev, [funcionario.id]: espelhoData.totalColunas?.bancoDeHoras || '00:00' }));
+            const novosSaldos: Record<string, string> = {};
+
+            // Processar em lotes de 10 para não sobrecarregar
+            const lotes = [];
+            for (let i = 0; i < todosFuncionarios.length; i += 10) {
+                const lote = todosFuncionarios.slice(i, i + 10);
+                lotes.push(lote);
             }
-        } catch (err) {
-            console.error(`Erro ao carregar dados do funcionário ${funcionario.id}:`, err);
-        } finally {
-            setLoadingDados(prev => ({ ...prev, [funcionario.id]: false }));
-        }
-    }, [token, empresa, dataInicio, dataFim]);
 
-    const carregarTodasBatidas = useCallback(async () => {
+            for (const lote of lotes) {
+                const promises = lote.map(async (func) => {
+                    try {
+                        const espelhoUrl = `/api/espelho-ponto?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&idFuncionario=${func.id}&dataInicio=${dataInicio}&dataFim=${dataFim}`;
+                        const response = await fetch(espelhoUrl);
+                        if (response.ok) {
+                            const data = await response.json();
+                            return { id: func.id, saldo: data.totalColunas?.bancoDeHoras || '00:00' };
+                        }
+                        return { id: func.id, saldo: '00:00' };
+                    } catch {
+                        return { id: func.id, saldo: '00:00' };
+                    }
+                });
+
+                const resultados = await Promise.all(promises);
+                resultados.forEach(r => { novosSaldos[r.id] = r.saldo; });
+
+                // Atualizar progressivamente
+                setTodosSaldos(prev => ({ ...prev, ...novosSaldos }));
+            }
+
+            setSaldosCarregados(true);
+        } catch (err) {
+            console.error('Erro ao carregar todos os saldos:', err);
+        } finally {
+            setLoadingSaldos(false);
+        }
+    }, [token, empresa, todosFuncionarios, dataInicio, dataFim, saldosCarregados]);
+
+    // Carregar TODAS as batidas do período de uma vez
+    const carregarBatidas = useCallback(async () => {
         if (!token || !empresa) return;
 
+        setLoadingBatidas(true);
+
         try {
-            console.log('Carregando todas as batidas...');
-            let todas: Batida[] = [];
+            let todasBatidas: Batida[] = [];
             let pagina = 1;
             let totalPaginasAPI = 1;
 
             const primeiraUrl = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=1`;
             const primeiraResponse = await fetch(primeiraUrl);
 
-            if (primeiraResponse.status === 401) {
-                console.error('Token expirado ou inválido. Fazendo logout...');
-                logout();
-                return;
-            }
-
             if (primeiraResponse.ok) {
                 const primeiraData = await primeiraResponse.json();
+                todasBatidas = [...(primeiraData.listaDeBatidas || [])];
+                totalPaginasAPI = primeiraData.totalPaginas || 1;
 
-                if (primeiraData && Array.isArray(primeiraData.listaDeBatidas)) {
-                    todas = [...primeiraData.listaDeBatidas];
-                    totalPaginasAPI = primeiraData.totalPaginas || 1;
-
-                    if (totalPaginasAPI > 1) {
-                        const promises = [];
-                        for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
-                            const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
-                            promises.push(fetch(url).then(async res => {
-                                if (res.status === 401) {
-                                    throw new Error('Não autorizado');
-                                }
-                                return res.json();
-                            }));
-                        }
-
-                        try {
-                            const resultados = await Promise.all(promises);
-                            resultados.forEach(data => {
-                                if (data && Array.isArray(data.listaDeBatidas)) {
-                                    todas = [...todas, ...data.listaDeBatidas];
-                                }
-                            });
-                        } catch (err) {
-                            console.error('Erro ao carregar páginas adicionais:', err);
-                            logout();
-                            return;
-                        }
+                if (totalPaginasAPI > 1) {
+                    const promises = [];
+                    for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
+                        const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
+                        promises.push(fetch(url).then(res => res.json()));
                     }
 
-                    console.log(`Total de batidas carregadas: ${todas.length}`);
-                    setTodasBatidas(todas);
-                    setBatidasCarregadas(true);
-
-                    const batidasPorMatricula: Record<string, Batida> = {};
-                    todas.forEach((batida: Batida) => {
-                        const matricula = batida.matriculaFuncionario;
-                        if (!batidasPorMatricula[matricula] ||
-                            new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula]?.data}T${batidasPorMatricula[matricula]?.hora}`)) {
-                            batidasPorMatricula[matricula] = batida;
+                    const resultados = await Promise.all(promises);
+                    resultados.forEach(data => {
+                        if (data && data.listaDeBatidas) {
+                            todasBatidas = [...todasBatidas, ...data.listaDeBatidas];
                         }
                     });
-                    setUltimasBatidas(batidasPorMatricula);
-                } else {
-                    console.warn('Resposta da API de batidas não tem o formato esperado:', primeiraData);
-                    setBatidasCarregadas(true);
                 }
+
+                // Organizar por matrícula (última batida de cada)
+                const batidasPorMatricula: Record<string, Batida> = {};
+                todasBatidas.forEach((batida: Batida) => {
+                    const matricula = batida.matriculaFuncionario;
+                    if (!batidasPorMatricula[matricula] ||
+                        new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula]?.data}T${batidasPorMatricula[matricula]?.hora}`)) {
+                        batidasPorMatricula[matricula] = batida;
+                    }
+                });
+
+                setUltimasBatidas(batidasPorMatricula);
             }
         } catch (err) {
-            console.error('Erro ao carregar todas as batidas:', err);
+            console.error('Erro ao carregar batidas:', err);
+        } finally {
+            setLoadingBatidas(false);
         }
-    }, [token, empresa, dataInicio, dataFim, logout]);
+    }, [token, empresa, dataInicio, dataFim]);
 
+    // 🔥 Aplicar filtros USANDO todos os saldos
     const aplicarFiltrosEPaginar = useCallback(() => {
         setLoadingPagina(true);
 
         let filtrados = [...todosFuncionarios];
 
+        // Filtro por nome
         if (filtroNome) {
             filtrados = filtrados.filter(func =>
                 func.nome.toLowerCase().includes(filtroNome.toLowerCase())
             );
         }
 
+        // Filtro por departamento
         if (filtroDepartamento) {
             filtrados = filtrados.filter(func =>
                 func.departamento === filtroDepartamento
             );
         }
 
-        if (filtroSaldo !== 'todos') {
+        // 🔥 FILTRO GLOBAL por saldo (usa todos os saldos)
+        if (filtroSaldo !== 'todos' && saldosCarregados) {
             filtrados = filtrados.filter(func => {
-                const saldo = saldos[func.id];
-                if (!saldo) return true;
+                const saldo = todosSaldos[func.id];
+                if (!saldo) return false;
 
                 const isNegative = saldo.startsWith('-');
                 return filtroSaldo === 'positivo' ? !isNegative : isNegative;
@@ -207,63 +231,55 @@ export default function DashboardPage() {
         const paginas = Math.ceil(total / ITENS_POR_PAGINA);
         setTotalPaginas(paginas || 1);
 
+        // Ajustar página atual
+        let novaPagina = paginaAtual;
         if (paginaAtual > paginas && paginas > 0) {
+            novaPagina = paginas;
             setPaginaAtual(paginas);
         }
 
-        const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
+        // Pegar apenas os funcionários da página atual
+        const inicio = (novaPagina - 1) * ITENS_POR_PAGINA;
         const fim = inicio + ITENS_POR_PAGINA;
         const funcionariosDaPagina = filtrados.slice(inicio, fim);
 
         setFuncionariosPagina(funcionariosDaPagina);
         setLoadingPagina(false);
-    }, [todosFuncionarios, filtroNome, filtroDepartamento, filtroSaldo, saldos, paginaAtual]);
+    }, [todosFuncionarios, filtroNome, filtroDepartamento, filtroSaldo, todosSaldos, saldosCarregados, paginaAtual]);
 
+    // Carregar todos os saldos quando os funcionários forem carregados
+    useEffect(() => {
+        if (todosFuncionarios.length > 0 && !saldosCarregados && !loadingSaldos) {
+            carregarTodosSaldos();
+        }
+    }, [todosFuncionarios, saldosCarregados, loadingSaldos, carregarTodosSaldos]);
+
+    // Carregar batidas
+    useEffect(() => {
+        if (token && empresa && !loading) {
+            carregarBatidas();
+        }
+    }, [dataInicio, dataFim, token, empresa, loading, carregarBatidas]);
+
+    // Aplicar filtros quando necessário
+    useEffect(() => {
+        if (todosFuncionarios.length > 0) {
+            aplicarFiltrosEPaginar();
+        }
+    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, todosSaldos, saldosCarregados, aplicarFiltrosEPaginar]);
+
+    // Verificar autenticação
     useEffect(() => {
         if (!isAuthenticated && !initialLoading) router.push('/login');
     }, [isAuthenticated, initialLoading, router]);
 
+    // Carregar funcionários
     useEffect(() => {
-        if (isAuthenticated && token && empresa) carregarFuncionarios();
+        if (isAuthenticated && token && empresa) {
+            carregarFuncionarios();
+        }
     }, [isAuthenticated, token, empresa, carregarFuncionarios]);
 
-    useEffect(() => {
-        if (token && empresa && !loading && todosFuncionarios.length > 0 && !batidasCarregadas) {
-            carregarTodasBatidas();
-        }
-    }, [token, empresa, loading, todosFuncionarios, batidasCarregadas, carregarTodasBatidas]);
-
-    useEffect(() => {
-        if (token && empresa && !loading && batidasCarregadas) {
-            setBatidasCarregadas(false);
-            setTodasBatidas([]);
-            carregarTodasBatidas();
-        }
-    }, [dataInicio, dataFim, token, empresa, loading, batidasCarregadas, carregarTodasBatidas]);
-
-    useEffect(() => {
-        if (todosFuncionarios.length > 0) aplicarFiltrosEPaginar();
-    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, saldos, aplicarFiltrosEPaginar]);
-
-    useEffect(() => {
-        if (todosFuncionarios.length > 0) {
-            const deps = new Set<string>();
-            todosFuncionarios.forEach(func => { if (func.departamento) deps.add(func.departamento); });
-            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
-        }
-    }, [todosFuncionarios]);
-
-    useEffect(() => {
-        if (funcionariosPagina.length > 0) {
-            funcionariosPagina.forEach(func => {
-                if (!saldos[func.id] && !loadingDados[func.id]) carregarDadosFuncionario(func);
-            });
-        }
-    }, [funcionariosPagina, saldos, loadingDados, carregarDadosFuncionario]);
-
-    // ============================================
-    // 4. AGORA SIM, condicionais e returns
-    // ============================================
     if (initialLoading) {
         return (
             <div className="min-h-screen flex items-center justify-center">
@@ -285,9 +301,8 @@ export default function DashboardPage() {
     };
 
     const handleRefresh = () => {
-        setBatidasCarregadas(false);
-        setTodasBatidas([]);
-        setSaldos({});
+        setSaldosCarregados(false);
+        setTodosSaldos({});
         setUltimasBatidas({});
         carregarFuncionarios(true);
     };
@@ -314,9 +329,15 @@ export default function DashboardPage() {
         return { valor: saldo, isNegative };
     };
 
-    if (!isAuthenticated) {
-        return null;
-    }
+    const formatarDataHora = (dataStr: string, horaStr: string) => {
+        try {
+            const [ano, mes, dia] = dataStr.split('-');
+            const [hora, minuto] = horaStr.split(':');
+            return `${dia}/${mes}/${ano} ${hora}:${minuto}`;
+        } catch {
+            return dataStr + ' ' + horaStr.substring(0, 5);
+        }
+    };
 
     return (
         <div className="min-h-screen bg-background">
@@ -325,8 +346,12 @@ export default function DashboardPage() {
                 <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
                     <div className="flex justify-between items-center h-16">
                         <div className="flex items-center gap-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary font-bold text-primary-foreground text-sm">
-                                CDC
+                            <div className="flex h-16 w-16 items-center justify-center font-bold text-primary-foreground text-sm">
+                                <img
+                                    src="/logo.png"
+                                    alt="CDC + EZPoint Logo"
+                                    className="h-16 w-16 object-contain"
+                                />
                             </div>
                             <h1 className="text-xl font-semibold text-foreground">
                                 Painel de Funcionários
@@ -545,9 +570,10 @@ export default function DashboardPage() {
                                     </thead>
                                     <tbody className="divide-y divide-border">
                                         {funcionariosPagina.map((func) => {
-                                            const saldoInfo = saldos[func.id] ? formatarSaldo(saldos[func.id]) : { valor: '00:00', isNegative: false };
+                                            const saldoInfo = todosSaldos[func.id] ? formatarSaldo(todosSaldos[func.id]) : { valor: '...', isNegative: false };
                                             const ultimaBatida = ultimasBatidas[func.matricula];
-                                            const carregando = loadingDados[func.id];
+                                            const carregandoSaldo = loadingSaldos && !todosSaldos[func.id];
+                                            const carregandoBatida = loadingBatidas && !ultimasBatidas[func.matricula];
 
                                             return (
                                                 <tr key={func.id} className="hover:bg-muted/50 transition-colors">
@@ -569,7 +595,7 @@ export default function DashboardPage() {
                                                         </div>
                                                     </td>
                                                     <td className="p-4">
-                                                        {carregando ? (
+                                                        {carregandoSaldo ? (
                                                             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
                                                         ) : (
                                                             <span className={`text-sm font-mono font-medium ${saldoInfo.isNegative ? 'text-destructive' : 'text-green-600'
@@ -579,11 +605,13 @@ export default function DashboardPage() {
                                                         )}
                                                     </td>
                                                     <td className="p-4">
-                                                        {ultimaBatida ? (
+                                                        {carregandoBatida ? (
+                                                            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                                                        ) : ultimaBatida ? (
                                                             <div className="flex items-center gap-2">
                                                                 <Clock className="h-4 w-4 text-muted-foreground" />
                                                                 <span className="text-sm text-foreground">
-                                                                    {new Date(ultimaBatida.data).toLocaleDateString('pt-BR')} {ultimaBatida.hora.substring(0, 5)}
+                                                                    {formatarDataHora(ultimaBatida.data, ultimaBatida.hora)}
                                                                 </span>
                                                                 {ultimaBatida.ocorrencia === 'D' && (
                                                                     <span className="text-xs bg-destructive/10 text-destructive px-1.5 py-0.5 rounded">

@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 interface AuthContextType {
     isAuthenticated: boolean;
     isLoading: boolean;
+    initialLoading: boolean;
     error: string | null;
     login: (empresa: string, usuario: string, senha: string) => Promise<boolean>;
     logout: () => void;
@@ -17,19 +18,53 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(false);
+    const [initialLoading, setInitialLoading] = useState(true); // Novo estado para loading inicial
     const [error, setError] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const [empresa, setEmpresa] = useState<string | null>(null);
     const router = useRouter();
 
-    // Verificar se já existe token no sessionStorage ao iniciar
+
+    // Verificar se já existe token no localStorage ao iniciar
     useEffect(() => {
-        const storedToken = sessionStorage.getItem('token');
-        const storedEmpresa = sessionStorage.getItem('empresa');
-        if (storedToken) {
-            setToken(storedToken);
-            setEmpresa(storedEmpresa);
-        }
+        const checkAuth = () => {
+            try {
+                const storedToken = localStorage.getItem('token');
+                const storedEmpresa = localStorage.getItem('empresa');
+                const storedTimestamp = localStorage.getItem('loginTimestamp');
+
+                console.log('Verificando autenticação:', {
+                    hasToken: !!storedToken,
+                    hasEmpresa: !!storedEmpresa,
+                    hasTimestamp: !!storedTimestamp
+                });
+
+                if (storedToken && storedEmpresa && storedTimestamp) {
+                    // Verificar se o token não expirou (24 horas)
+                    const agora = Date.now();
+                    const diffHoras = (agora - parseInt(storedTimestamp)) / (1000 * 60 * 60);
+
+                    if (diffHoras < 24) {
+                        setToken(storedToken);
+                        setEmpresa(storedEmpresa);
+                        console.log('Token restaurado do localStorage');
+                    } else {
+                        // Token expirado, limpar
+                        console.log('Token expirado');
+                        localStorage.removeItem('token');
+                        localStorage.removeItem('empresa');
+                        localStorage.removeItem('usuario');
+                        localStorage.removeItem('loginTimestamp');
+                    }
+                }
+            } catch (err) {
+                console.error('Erro ao verificar autenticação:', err);
+            } finally {
+                setInitialLoading(false);
+            }
+        };
+
+        checkAuth();
     }, []);
 
     const login = async (empresa: string, usuario: string, senha: string) => {
@@ -48,11 +83,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const data = await response.json();
 
             if (data.token) {
+                // Salvar no estado
                 setToken(data.token);
                 setEmpresa(empresa);
-                sessionStorage.setItem('token', data.token);
-                sessionStorage.setItem('empresa', empresa);
-                sessionStorage.setItem('usuario', usuario);
+
+                // Salvar no localStorage (persistente)
+                localStorage.setItem('token', data.token);
+                localStorage.setItem('empresa', empresa);
+                localStorage.setItem('usuario', usuario);
+                localStorage.setItem('loginTimestamp', Date.now().toString());
+
                 return true;
             } else {
                 setError(data.error || 'Erro ao fazer login');
@@ -69,7 +109,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const logout = () => {
         setToken(null);
         setEmpresa(null);
-        sessionStorage.clear();
+
+        // Limpar localStorage
+        localStorage.removeItem('token');
+        localStorage.removeItem('empresa');
+        localStorage.removeItem('usuario');
+        localStorage.removeItem('loginTimestamp');
+
         router.push('/login');
     };
 
@@ -77,6 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         <AuthContext.Provider value={{
             isAuthenticated: !!token,
             isLoading,
+            initialLoading,
             error,
             login,
             logout,

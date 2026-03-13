@@ -26,7 +26,7 @@ import { format, subMonths } from 'date-fns';
 const ITENS_POR_PAGINA = 20;
 
 export default function DashboardPage() {
-    const { isAuthenticated, token, empresa, logout } = useAuth();
+    const { isAuthenticated, initialLoading, token, empresa, logout } = useAuth();
     const router = useRouter();
 
     const [todosFuncionarios, setTodosFuncionarios] = useState<Funcionario[]>([]);
@@ -37,164 +37,70 @@ export default function DashboardPage() {
     const [error, setError] = useState('');
     const [usandoCache, setUsandoCache] = useState(false);
     const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
-
-    // Paginação
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [totalPaginas, setTotalPaginas] = useState(1);
-
-    // Dados adicionais por funcionário da PÁGINA ATUAL apenas
     const [saldos, setSaldos] = useState<Record<string, string>>({});
     const [ultimasBatidas, setUltimasBatidas] = useState<Record<string, Batida>>({});
     const [loadingDados, setLoadingDados] = useState<Record<string, boolean>>({});
-
-    // Filtros
     const [filtroNome, setFiltroNome] = useState('');
     const [filtroDepartamento, setFiltroDepartamento] = useState('');
-    const [filtroSaldo, setFiltroSaldo] = useState('todos'); // 'todos', 'positivo', 'negativo'
-
-    // Filtros de data
+    const [filtroSaldo, setFiltroSaldo] = useState('todos');
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 2), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(new Date(), 'yyyy-MM-dd'));
-
-    // Lista única de departamentos para o select
     const [departamentos, setDepartamentos] = useState<string[]>([]);
-
-    // Cache de batidas (carregado uma única vez para todas as páginas)
     const [todasBatidas, setTodasBatidas] = useState<Batida[]>([]);
     const [batidasCarregadas, setBatidasCarregadas] = useState(false);
 
-    useEffect(() => {
-        if (!isAuthenticated) {
-            router.push('/login');
-            return;
-        }
-
-        carregarFuncionarios();
-    }, [isAuthenticated, router]);
-
-    // Carregar batidas APÓS carregar funcionários (uma única vez)
-    useEffect(() => {
-        if (token && empresa && !loading && todosFuncionarios.length > 0 && !batidasCarregadas) {
-            carregarTodasBatidas();
-        }
-    }, [token, empresa, loading, todosFuncionarios, batidasCarregadas]);
-
-    // Recarregar batidas quando as datas mudarem
-    useEffect(() => {
-        if (token && empresa && !loading && batidasCarregadas) {
-            setBatidasCarregadas(false);
-            setTodasBatidas([]);
-            carregarTodasBatidas();
-        }
-    }, [dataInicio, dataFim]);
-
-    // Aplicar filtros e paginar quando os dados mudarem
-    useEffect(() => {
-        if (todosFuncionarios.length > 0) {
-            aplicarFiltrosEPaginar();
-        }
-    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, saldos]);
-
-    // Extrair departamentos únicos quando os funcionários são carregados
-    useEffect(() => {
-        if (todosFuncionarios.length > 0) {
-            const deps = new Set<string>();
-            todosFuncionarios.forEach(func => {
-                if (func.departamento) {
-                    deps.add(func.departamento);
-                }
-            });
-            const sortedDeps = Array.from(deps).sort((a, b) => a.localeCompare(b));
-            setDepartamentos(sortedDeps);
-        }
-    }, [todosFuncionarios]);
-
-    // Carregar saldos dos funcionários da página atual
-    useEffect(() => {
-        if (funcionariosPagina.length > 0) {
-            funcionariosPagina.forEach(func => {
-                if (!saldos[func.id] && !loadingDados[func.id]) {
-                    carregarDadosFuncionario(func);
-                }
-            });
-        }
-    }, [funcionariosPagina]);
-
-    const carregarFuncionarios = async (forceRefresh = false) => {
+    const carregarFuncionarios = useCallback(async (forceRefresh = false) => {
         if (!token || !empresa) return;
-
         setLoading(true);
         setError('');
         setUsandoCache(false);
 
-        const startTime = Date.now();
-
         try {
             const url = `/api/funcionarios?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&ocultarDemitidos=true${forceRefresh ? '&forceRefresh=true' : ''}`;
-
             const response = await fetch(url);
             const data = await response.json();
 
-            if (!response.ok) {
-                throw new Error(data.error || `Erro HTTP: ${response.status}`);
-            }
-
-            if (data._fallback) {
-                setUsandoCache(true);
-            }
+            if (!response.ok) throw new Error(data.error || `Erro HTTP: ${response.status}`);
+            if (data._fallback) setUsandoCache(true);
 
             setTodosFuncionarios(data.listaDeFuncionarios || []);
             setUltimaAtualizacao(new Date());
-
-            const elapsedTime = Date.now() - startTime;
-            if (elapsedTime < 500) {
-                await new Promise(resolve => setTimeout(resolve, 500 - elapsedTime));
-            }
-
         } catch (err: any) {
             console.error('Erro:', err);
-
             if (err.message?.includes('502') || err.message?.includes('503')) {
                 setError('O servidor do EZPoint está instável. Tentando usar dados em cache...');
                 setTimeout(() => carregarFuncionarios(false), 2000);
             } else {
                 setError(err.message || 'Erro ao carregar funcionários');
             }
-
-            if (err.message?.includes('401')) {
-                logout();
-            }
+            if (err.message?.includes('401')) logout();
         } finally {
             setLoading(false);
         }
-    };
+    }, [token, empresa, logout]);
 
-    const carregarDadosFuncionario = async (funcionario: Funcionario) => {
+    const carregarDadosFuncionario = useCallback(async (funcionario: Funcionario) => {
         if (!token || !empresa) return;
 
         setLoadingDados(prev => ({ ...prev, [funcionario.id]: true }));
 
         try {
-            // Carregar saldo com as datas selecionadas
             const espelhoUrl = `/api/espelho-ponto?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&idFuncionario=${funcionario.id}&dataInicio=${dataInicio}&dataFim=${dataFim}`;
             const espelhoResponse = await fetch(espelhoUrl);
-
             if (espelhoResponse.ok) {
                 const espelhoData = await espelhoResponse.json();
-                setSaldos(prev => ({
-                    ...prev,
-                    [funcionario.id]: espelhoData.totalColunas?.bancoDeHoras || '00:00'
-                }));
+                setSaldos(prev => ({ ...prev, [funcionario.id]: espelhoData.totalColunas?.bancoDeHoras || '00:00' }));
             }
-
         } catch (err) {
             console.error(`Erro ao carregar dados do funcionário ${funcionario.id}:`, err);
         } finally {
             setLoadingDados(prev => ({ ...prev, [funcionario.id]: false }));
         }
-    };
+    }, [token, empresa, dataInicio, dataFim]);
 
-    const carregarTodasBatidas = async () => {
+    const carregarTodasBatidas = useCallback(async () => {
         if (!token || !empresa) return;
 
         try {
@@ -206,49 +112,71 @@ export default function DashboardPage() {
             const primeiraUrl = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=1`;
             const primeiraResponse = await fetch(primeiraUrl);
 
-            if (primeiraResponse.ok) {
-                const primeiraData = await primeiraResponse.json();
-                todas = [...primeiraData.listaDeBatidas];
-                totalPaginasAPI = primeiraData.totalPaginas || 1;
-
-                if (totalPaginasAPI > 1) {
-                    const promises = [];
-                    for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
-                        const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
-                        promises.push(fetch(url).then(res => res.json()));
-                    }
-
-                    const resultados = await Promise.all(promises);
-                    resultados.forEach(data => {
-                        todas = [...todas, ...data.listaDeBatidas];
-                    });
-                }
-
-                console.log(`Total de batidas carregadas: ${todas.length}`);
-                setTodasBatidas(todas);
-                setBatidasCarregadas(true);
-
-                // Processar últimas batidas para TODOS os funcionários
-                const batidasPorMatricula: Record<string, Batida> = {};
-                todas.forEach((batida: Batida) => {
-                    const matricula = batida.matriculaFuncionario;
-                    if (!batidasPorMatricula[matricula] ||
-                        new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula].data}T${batidasPorMatricula[matricula].hora}`)) {
-                        batidasPorMatricula[matricula] = batida;
-                    }
-                });
-                setUltimasBatidas(batidasPorMatricula);
+            if (primeiraResponse.status === 401) {
+                console.error('Token expirado ou inválido. Fazendo logout...');
+                logout();
+                return;
             }
 
+            if (primeiraResponse.ok) {
+                const primeiraData = await primeiraResponse.json();
+
+                if (primeiraData && Array.isArray(primeiraData.listaDeBatidas)) {
+                    todas = [...primeiraData.listaDeBatidas];
+                    totalPaginasAPI = primeiraData.totalPaginas || 1;
+
+                    if (totalPaginasAPI > 1) {
+                        const promises = [];
+                        for (pagina = 2; pagina <= totalPaginasAPI; pagina++) {
+                            const url = `/api/batidas?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&dataInicio=${dataInicio}&dataFim=${dataFim}&pagina=${pagina}`;
+                            promises.push(fetch(url).then(async res => {
+                                if (res.status === 401) {
+                                    throw new Error('Não autorizado');
+                                }
+                                return res.json();
+                            }));
+                        }
+
+                        try {
+                            const resultados = await Promise.all(promises);
+                            resultados.forEach(data => {
+                                if (data && Array.isArray(data.listaDeBatidas)) {
+                                    todas = [...todas, ...data.listaDeBatidas];
+                                }
+                            });
+                        } catch (err) {
+                            console.error('Erro ao carregar páginas adicionais:', err);
+                            logout();
+                            return;
+                        }
+                    }
+
+                    console.log(`Total de batidas carregadas: ${todas.length}`);
+                    setTodasBatidas(todas);
+                    setBatidasCarregadas(true);
+
+                    const batidasPorMatricula: Record<string, Batida> = {};
+                    todas.forEach((batida: Batida) => {
+                        const matricula = batida.matriculaFuncionario;
+                        if (!batidasPorMatricula[matricula] ||
+                            new Date(`${batida.data}T${batida.hora}`) > new Date(`${batidasPorMatricula[matricula]?.data}T${batidasPorMatricula[matricula]?.hora}`)) {
+                            batidasPorMatricula[matricula] = batida;
+                        }
+                    });
+                    setUltimasBatidas(batidasPorMatricula);
+                } else {
+                    console.warn('Resposta da API de batidas não tem o formato esperado:', primeiraData);
+                    setBatidasCarregadas(true);
+                }
+            }
         } catch (err) {
             console.error('Erro ao carregar todas as batidas:', err);
         }
-    };
+    }, [token, empresa, dataInicio, dataFim, logout]);
 
     const aplicarFiltrosEPaginar = useCallback(() => {
         setLoadingPagina(true);
 
-        // Aplicar filtros
         let filtrados = [...todosFuncionarios];
 
         if (filtroNome) {
@@ -263,11 +191,10 @@ export default function DashboardPage() {
             );
         }
 
-        // Filtrar por saldo (usando os saldos já carregados da página)
         if (filtroSaldo !== 'todos') {
             filtrados = filtrados.filter(func => {
                 const saldo = saldos[func.id];
-                if (!saldo) return true; // Se não tem saldo ainda, mantém (vai aparecer com placeholder)
+                if (!saldo) return true;
 
                 const isNegative = saldo.startsWith('-');
                 return filtroSaldo === 'positivo' ? !isNegative : isNegative;
@@ -276,25 +203,77 @@ export default function DashboardPage() {
 
         setFuncionariosFiltrados(filtrados);
 
-        // Calcular total de páginas
         const total = filtrados.length;
         const paginas = Math.ceil(total / ITENS_POR_PAGINA);
         setTotalPaginas(paginas || 1);
 
-        // Ajustar página atual se necessário
         if (paginaAtual > paginas && paginas > 0) {
             setPaginaAtual(paginas);
         }
 
-        // Pegar apenas os funcionários da página atual
         const inicio = (paginaAtual - 1) * ITENS_POR_PAGINA;
         const fim = inicio + ITENS_POR_PAGINA;
         const funcionariosDaPagina = filtrados.slice(inicio, fim);
 
         setFuncionariosPagina(funcionariosDaPagina);
         setLoadingPagina(false);
-
     }, [todosFuncionarios, filtroNome, filtroDepartamento, filtroSaldo, saldos, paginaAtual]);
+
+    useEffect(() => {
+        if (!isAuthenticated && !initialLoading) router.push('/login');
+    }, [isAuthenticated, initialLoading, router]);
+
+    useEffect(() => {
+        if (isAuthenticated && token && empresa) carregarFuncionarios();
+    }, [isAuthenticated, token, empresa, carregarFuncionarios]);
+
+    useEffect(() => {
+        if (token && empresa && !loading && todosFuncionarios.length > 0 && !batidasCarregadas) {
+            carregarTodasBatidas();
+        }
+    }, [token, empresa, loading, todosFuncionarios, batidasCarregadas, carregarTodasBatidas]);
+
+    useEffect(() => {
+        if (token && empresa && !loading && batidasCarregadas) {
+            setBatidasCarregadas(false);
+            setTodasBatidas([]);
+            carregarTodasBatidas();
+        }
+    }, [dataInicio, dataFim, token, empresa, loading, batidasCarregadas, carregarTodasBatidas]);
+
+    useEffect(() => {
+        if (todosFuncionarios.length > 0) aplicarFiltrosEPaginar();
+    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, saldos, aplicarFiltrosEPaginar]);
+
+    useEffect(() => {
+        if (todosFuncionarios.length > 0) {
+            const deps = new Set<string>();
+            todosFuncionarios.forEach(func => { if (func.departamento) deps.add(func.departamento); });
+            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
+        }
+    }, [todosFuncionarios]);
+
+    useEffect(() => {
+        if (funcionariosPagina.length > 0) {
+            funcionariosPagina.forEach(func => {
+                if (!saldos[func.id] && !loadingDados[func.id]) carregarDadosFuncionario(func);
+            });
+        }
+    }, [funcionariosPagina, saldos, loadingDados, carregarDadosFuncionario]);
+
+    // ============================================
+    // 4. AGORA SIM, condicionais e returns
+    // ============================================
+    if (initialLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">Verificando sessão...</span>
+            </div>
+        );
+    }
+
+    if (!isAuthenticated) return null;
 
     const handleLimparFiltros = () => {
         setFiltroNome('');

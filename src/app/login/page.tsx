@@ -1,7 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -12,41 +13,28 @@ export default function LoginPage() {
     const [empresa, setEmpresa] = useState('cdc');
     const [usuario, setUsuario] = useState('cdc');
     const [senha, setSenha] = useState('cdc#%¨&¨&*5842585');
-    const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
+    const { login, isLoading, error, isAuthenticated, initialLoading } = useAuth();
+
+    // Se já estiver autenticado, redirecionar para dashboard
+    useEffect(() => {
+        if (isAuthenticated && !initialLoading) {
+            router.push('/dashboard');
+        }
+    }, [isAuthenticated, initialLoading, router]);
+
+    if (initialLoading) {
+        return (
+            <div className="min-h-screen flex items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                <span className="ml-2 text-muted-foreground">Verificando sessão...</span>
+            </div>
+        );
+    }
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
-        setIsLoading(true);
-        setError('');
-
-        try {
-            const response = await fetch('/api/proxy-login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ empresa, usuario, senha })
-            });
-
-            const data = await response.json();
-
-            if (data.token) {
-                // Salvar token e redirecionar IMEDIATAMENTE
-                sessionStorage.setItem('token', data.token);
-                sessionStorage.setItem('empresa', empresa);
-                sessionStorage.setItem('usuario', usuario);
-
-                // Redirecionar sem esperar mais nada
-                router.push('/dashboard');
-            } else {
-                setError(data.error || 'Erro ao fazer login');
-                setIsLoading(false);
-            }
-        } catch (err: any) {
-            setError(err.message || 'Erro de conexão');
-            setIsLoading(false);
-        }
+        const success = await login(empresa, usuario, senha);
+        if (success) router.push('/dashboard');
     };
 
     return (
@@ -74,6 +62,8 @@ export default function LoginPage() {
                             id="empresa"
                             type="text"
                             placeholder="cdc"
+                            value={empresa}
+                            onChange={(e) => setEmpresa(e.target.value)}
                             required
                         />
                     </div>
@@ -84,6 +74,8 @@ export default function LoginPage() {
                             id="usuario"
                             type="text"
                             placeholder="cdc"
+                            value={usuario}
+                            onChange={(e) => setUsuario(e.target.value)}
                             required
                         />
                     </div>
@@ -94,6 +86,8 @@ export default function LoginPage() {
                             id="senha"
                             type="password"
                             placeholder="••••••••"
+                            value={senha}
+                            onChange={(e) => setSenha(e.target.value)}
                             required
                         />
                     </div>

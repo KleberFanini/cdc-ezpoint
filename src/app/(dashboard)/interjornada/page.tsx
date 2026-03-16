@@ -14,7 +14,11 @@ import {
     Moon,
     Sun,
     AlertTriangle,
-    CheckCircle2
+    CheckCircle2,
+    Briefcase,
+    TrendingUp,
+    TrendingDown,
+    Gift
 } from 'lucide-react';
 import { format, subMonths } from 'date-fns';
 
@@ -24,9 +28,14 @@ interface EspelhoDia {
     data: string;
     horasTrabalhadasDiurnas: string;
     horasTrabalhadasNoturnas: string;
-    batidas?: string | string[]; // Pode vir como string ou array
+    batidas?: string | string[];
     interjornada: string;
     horario?: string;
+    cargaHoraria?: string;
+    extraDiurna?: string;
+    extraNoturna?: string;
+    horasAbonadas?: string;
+    bancoDeHoras?: string;
 }
 
 interface AnaliseInterjornada {
@@ -34,6 +43,11 @@ interface AnaliseInterjornada {
     dias: EspelhoDia[];
     totalHorasDiurnas: number;
     totalHorasNoturnas: number;
+    totalCargaHoraria: number;
+    totalExtraDiurna: number;
+    totalExtraNoturna: number;
+    totalHorasAbonadas: number;
+    totalBancoDeHoras: number;
     diasComExcesso: number;
     diasComJornadaNoturna: number;
     mediaInterjornada: string;
@@ -107,6 +121,11 @@ export default function InterjornadaPage() {
 
             let totalDiurnas = 0;
             let totalNoturnas = 0;
+            let totalCargaHoraria = 0;
+            let totalExtraDiurna = 0;
+            let totalExtraNoturna = 0;
+            let totalHorasAbonadas = 0;
+            let totalBancoDeHoras = 0;
             let diasExcesso = 0;
             let diasNoturnos = 0;
             let somaInterjornada = 0;
@@ -115,10 +134,20 @@ export default function InterjornadaPage() {
             dias.forEach((dia: EspelhoDia) => {
                 const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
                 const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
+                const carga = converterHoraParaMinutos(dia.cargaHoraria || '00:00');
+                const extraDiurna = converterHoraParaMinutos(dia.extraDiurna || '00:00');
+                const extraNoturna = converterHoraParaMinutos(dia.extraNoturna || '00:00');
+                const abonadas = converterHoraParaMinutos(dia.horasAbonadas || '00:00');
+                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
                 const totalDia = diurnas + noturnas;
 
                 totalDiurnas += diurnas;
                 totalNoturnas += noturnas;
+                totalCargaHoraria += carga;
+                totalExtraDiurna += extraDiurna;
+                totalExtraNoturna += extraNoturna;
+                totalHorasAbonadas += abonadas;
+                totalBancoDeHoras += bancoHoras;
 
                 if (totalDia > 600) {
                     diasExcesso++;
@@ -144,6 +173,11 @@ export default function InterjornadaPage() {
                 dias,
                 totalHorasDiurnas: totalDiurnas,
                 totalHorasNoturnas: totalNoturnas,
+                totalCargaHoraria,
+                totalExtraDiurna,
+                totalExtraNoturna,
+                totalHorasAbonadas,
+                totalBancoDeHoras,
                 diasComExcesso: diasExcesso,
                 diasComJornadaNoturna: diasNoturnos,
                 mediaInterjornada
@@ -285,6 +319,17 @@ export default function InterjornadaPage() {
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
+                                <Briefcase className="h-5 w-5 text-purple-500" />
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Carga Horária Total</p>
+                                    <p className="text-2xl font-semibold">
+                                        {formatarMinutosParaHora(analise.totalCargaHoraria)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="bg-card rounded-lg border p-6">
+                            <div className="flex items-center gap-3">
                                 <Sun className="h-5 w-5 text-yellow-500" />
                                 <div>
                                     <p className="text-sm text-muted-foreground">Total Horas Diurnas</p>
@@ -318,7 +363,10 @@ export default function InterjornadaPage() {
                                 </div>
                             </div>
                         </div>
+                    </div>
 
+                    {/* Segunda Linha de Cards */}
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
                                 <Clock className="h-5 w-5 text-purple-500" />
@@ -330,9 +378,45 @@ export default function InterjornadaPage() {
                                 </div>
                             </div>
                         </div>
+
+                        <div className="bg-card rounded-lg border p-6">
+                            <div className="flex items-center gap-3">
+                                <TrendingUp className="h-5 w-5 text-green-500" />
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Extra Diurna</p>
+                                    <p className="text-2xl font-semibold text-green-600">
+                                        {formatarMinutosParaHora(analise.totalExtraDiurna)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-card rounded-lg border p-6">
+                            <div className="flex items-center gap-3">
+                                <TrendingDown className="h-5 w-5 text-blue-500" />
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Extra Noturna</p>
+                                    <p className="text-2xl font-semibold text-blue-600">
+                                        {formatarMinutosParaHora(analise.totalExtraNoturna)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="bg-card rounded-lg border p-6">
+                            <div className="flex items-center gap-3">
+                                <Gift className="h-5 w-5 text-orange-500" />
+                                <div>
+                                    <p className="text-sm text-muted-foreground">Horas Abonadas</p>
+                                    <p className="text-2xl font-semibold text-orange-600">
+                                        {formatarMinutosParaHora(analise.totalHorasAbonadas)}
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
-                    {/* Tabela Detalhada */}
+                    {/* Tabela Detalhada - AGORA COM MAIS COLUNAS */}
                     <div className="bg-card rounded-lg border overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full">
@@ -342,7 +426,10 @@ export default function InterjornadaPage() {
                                         <th className="text-left p-4 text-sm font-medium">Batidas</th>
                                         <th className="text-left p-4 text-sm font-medium">Diurnas</th>
                                         <th className="text-left p-4 text-sm font-medium">Noturnas</th>
-                                        <th className="text-left p-4 text-sm font-medium">Total</th>
+                                        <th className="text-left p-4 text-sm font-medium">Extra Diurna</th>
+                                        <th className="text-left p-4 text-sm font-medium">Extra Noturna</th>
+                                        <th className="text-left p-4 text-sm font-medium">Abonadas</th>
+                                        <th className="text-left p-4 text-sm font-medium">Carga Horária</th>
                                         <th className="text-left p-4 text-sm font-medium">Status</th>
                                         <th className="text-left p-4 text-sm font-medium">Interjornada</th>
                                     </tr>
@@ -360,7 +447,7 @@ export default function InterjornadaPage() {
                                                 <td className="p-4 text-sm">
                                                     {formatarData(dia.data)}
                                                 </td>
-                                                <td className="p-4 text-sm font-mono">
+                                                <td className="p-4 text-sm font-mono max-w-xs truncate">
                                                     {formatarBatidas(dia.batidas)}
                                                 </td>
                                                 <td className="p-4 text-sm">
@@ -369,13 +456,22 @@ export default function InterjornadaPage() {
                                                 <td className="p-4 text-sm">
                                                     {dia.horasTrabalhadasNoturnas || '00:00'}
                                                 </td>
-                                                <td className="p-4 text-sm font-medium">
-                                                    {formatarMinutosParaHora(total)}
+                                                <td className="p-4 text-sm text-green-600">
+                                                    {dia.extraDiurna || '00:00'}
+                                                </td>
+                                                <td className="p-4 text-sm text-blue-600">
+                                                    {dia.extraNoturna || '00:00'}
+                                                </td>
+                                                <td className="p-4 text-sm text-orange-600">
+                                                    {dia.horasAbonadas || '00:00'}
+                                                </td>
+                                                <td className="p-4 text-sm font-mono">
+                                                    {dia.cargaHoraria || '00:00'}
                                                 </td>
                                                 <td className="p-4">
                                                     <div className={`flex items-center gap-1 ${status.cor}`}>
                                                         <StatusIcon className="h-4 w-4" />
-                                                        <span className="text-sm">{status.texto}</span>
+                                                        <span className="text-sm whitespace-nowrap">{status.texto}</span>
                                                     </div>
                                                 </td>
                                                 <td className="p-4 text-sm">

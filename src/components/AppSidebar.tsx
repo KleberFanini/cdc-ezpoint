@@ -19,7 +19,7 @@ import { cn } from '@/lib/utils';
 
 const menuItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'Interjornada', icon: Clock, path: '/interjornada' }
+    { label: 'Indicadores', icon: Clock, path: '/interjornada' }
 ];
 
 interface AppSidebarProps {

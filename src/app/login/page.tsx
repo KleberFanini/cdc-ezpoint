@@ -68,30 +68,27 @@ export default function LoginPage() {
                             placeholder="cdc"
                             value={empresa}
                             onChange={(e) => setEmpresa(e.target.value)}
+                            readOnly
                             required
                         />
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="usuario">Usuário</Label>
+                        <Label htmlFor="usuario">Usuário<span className="text-xs text-red-500">*</span></Label>
                         <Input
                             id="usuario"
                             type="text"
                             placeholder="cdc"
-                            value={usuario}
-                            onChange={(e) => setUsuario(e.target.value)}
                             required
                         />
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="senha">Senha</Label>
+                        <Label htmlFor="senha">Senha<span className="text-xs text-red-500">*</span></Label>
                         <Input
                             id="senha"
                             type="password"
                             placeholder="••••••••"
-                            value={senha}
-                            onChange={(e) => setSenha(e.target.value)}
                             required
                         />
                     </div>

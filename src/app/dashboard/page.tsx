@@ -214,11 +214,16 @@ export default function DashboardPage() {
             );
         }
 
-        // 🔥 FILTRO GLOBAL por saldo (usa todos os saldos)
-        if (filtroSaldo !== 'todos' && saldosCarregados) {
+        // 🔥 FILTRO PROGRESSIVO: se não tem todos os saldos, mostra aviso mas filtra o que já tem
+        if (filtroSaldo !== 'todos') {
+            if (!saldosCarregados) {
+                console.log(`Filtrando com dados parciais: ${Object.keys(todosSaldos).length}/${todosFuncionarios.length} saldos`);
+            }
+
             filtrados = filtrados.filter(func => {
                 const saldo = todosSaldos[func.id];
-                if (!saldo) return false;
+                // Se não tem saldo ainda, mantém na lista (vai aparecer com placeholder)
+                if (!saldo) return true;
 
                 const isNegative = saldo.startsWith('-');
                 return filtroSaldo === 'positivo' ? !isNegative : isNegative;

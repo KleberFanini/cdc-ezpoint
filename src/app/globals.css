@@ -37,6 +37,15 @@
 
   --radius: 0.625rem;
   --spacing-topbar-height: 3.5rem;
+
+  --sidebar-background: 217 71% 18%;
+  --sidebar-foreground: 213 31% 78%;
+  --sidebar-primary: 0 0% 100%;
+  --sidebar-primary-foreground: 217 71% 18%;
+  --sidebar-accent: 217 60% 24%;
+  --sidebar-accent-foreground: 0 0% 100%;
+  --sidebar-border: 217 50% 26%;
+  --sidebar-ring: 173 58% 39%;
 }
 
 @layer base {
@@ -60,4 +69,36 @@
   .card-shadow-hover {
     box-shadow: 0 4px 12px 0 hsl(var(--foreground) / 0.08), 0 2px 4px -1px hsl(var(--foreground) / 0.04);
   }
+}
+
+.bg-sidebar {
+  background-color: hsl(var(--sidebar-background));
+}
+
+.text-sidebar-foreground {
+  color: hsl(var(--sidebar-foreground));
+}
+
+.text-sidebar-primary {
+  color: hsl(var(--sidebar-primary));
+}
+
+.bg-sidebar-accent {
+  background-color: hsl(var(--sidebar-accent));
+}
+
+.text-sidebar-accent-foreground {
+  color: hsl(var(--sidebar-accent-foreground));
+}
+
+.border-sidebar-border {
+  border-color: hsl(var(--sidebar-border));
+}
+
+.hover\:text-sidebar-primary:hover {
+  color: hsl(var(--sidebar-primary));
+}
+
+.hover\:bg-sidebar-accent\/50:hover {
+  background-color: hsl(var(--sidebar-accent) / 0.5);
 }

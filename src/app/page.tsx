@@ -7,7 +7,6 @@ export default function Home() {
   const router = useRouter();
 
   useEffect(() => {
-    // Verificar se já está logado
     const token = localStorage.getItem('token');
     const timestamp = localStorage.getItem('loginTimestamp');
 
@@ -18,7 +17,6 @@ export default function Home() {
       if (diffHoras < 24) {
         router.push('/dashboard');
       } else {
-        // Token expirado, limpar
         localStorage.removeItem('token');
         localStorage.removeItem('empresa');
         localStorage.removeItem('usuario');

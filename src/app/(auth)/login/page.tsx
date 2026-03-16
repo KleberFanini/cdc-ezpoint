@@ -15,7 +15,6 @@ export default function LoginPage() {
     const [senha, setSenha] = useState('cdc#%¨&¨&*5842585');
     const { login, isLoading, error, isAuthenticated, initialLoading } = useAuth();
 
-    // Se já estiver autenticado, redirecionar para dashboard
     useEffect(() => {
         if (isAuthenticated && !initialLoading) {
             router.push('/dashboard');
@@ -41,11 +40,11 @@ export default function LoginPage() {
         <div className="flex min-h-screen items-center justify-center bg-background p-4">
             <div className="w-full max-w-sm space-y-6">
                 <div className="text-center space-y-2">
-                    <div className="mx-auto flex h-50 w-50 items-center justify-center font-bold text-primary-foreground text-lg">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center font-bold text-primary-foreground text-lg">
                         <img
                             src="/logo.png"
                             alt="CDC + EZPoint Logo"
-                            className="h-50 w-50 object-contain"
+                            className="h-12 w-12 object-contain"
                         />
                     </div>
                     <h1 className="text-2xl font-bold text-foreground">CDC + EZPoint</h1>
@@ -74,7 +73,7 @@ export default function LoginPage() {
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="usuario">Usuário<span className="text-xs text-red-500">*</span></Label>
+                        <Label htmlFor="usuario">Usuário</Label>
                         <Input
                             id="usuario"
                             type="text"
@@ -84,7 +83,7 @@ export default function LoginPage() {
                     </div>
 
                     <div className="space-y-2">
-                        <Label htmlFor="senha">Senha<span className="text-xs text-red-500">*</span></Label>
+                        <Label htmlFor="senha">Senha</Label>
                         <Input
                             id="senha"
                             type="password"

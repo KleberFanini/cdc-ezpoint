@@ -18,14 +18,12 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
     const [isLoading, setIsLoading] = useState(false);
-    const [initialLoading, setInitialLoading] = useState(true); // Novo estado para loading inicial
+    const [initialLoading, setInitialLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [token, setToken] = useState<string | null>(null);
     const [empresa, setEmpresa] = useState<string | null>(null);
     const router = useRouter();
 
-
-    // Verificar se já existe token no localStorage ao iniciar
     useEffect(() => {
         const checkAuth = () => {
             try {
@@ -40,7 +38,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                 });
 
                 if (storedToken && storedEmpresa && storedTimestamp) {
-                    // Verificar se o token não expirou (24 horas)
                     const agora = Date.now();
                     const diffHoras = (agora - parseInt(storedTimestamp)) / (1000 * 60 * 60);
 
@@ -49,7 +46,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
                         setEmpresa(storedEmpresa);
                         console.log('Token restaurado do localStorage');
                     } else {
-                        // Token expirado, limpar
                         console.log('Token expirado');
                         localStorage.removeItem('token');
                         localStorage.removeItem('empresa');
@@ -83,11 +79,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const data = await response.json();
 
             if (data.token) {
-                // Salvar no estado
                 setToken(data.token);
                 setEmpresa(empresa);
 
-                // Salvar no localStorage (persistente)
                 localStorage.setItem('token', data.token);
                 localStorage.setItem('empresa', empresa);
                 localStorage.setItem('usuario', usuario);
@@ -110,7 +104,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setToken(null);
         setEmpresa(null);
 
-        // Limpar localStorage
         localStorage.removeItem('token');
         localStorage.removeItem('empresa');
         localStorage.removeItem('usuario');

@@ -346,34 +346,6 @@ export default function DashboardPage() {
 
     return (
         <div className="min-h-screen bg-background">
-            {/* Topbar */}
-            <div className="bg-card border-b border-border sticky top-0 z-10">
-                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-                    <div className="flex justify-between items-center h-16">
-                        <div className="flex items-center gap-3">
-                            <div className="flex h-16 w-16 items-center justify-center font-bold text-primary-foreground text-sm">
-                                <img
-                                    src="/logo.png"
-                                    alt="CDC + EZPoint Logo"
-                                    className="h-16 w-16 object-contain"
-                                />
-                            </div>
-                            <h1 className="text-xl font-semibold text-foreground">
-                                Painel de Funcionários
-                            </h1>
-                            <span className="text-sm text-muted-foreground">
-                                {empresa}
-                            </span>
-                        </div>
-
-                        <Button variant="outline" onClick={logout} size="sm">
-                            <LogOut className="h-4 w-4 mr-2" />
-                            Sair
-                        </Button>
-                    </div>
-                </div>
-            </div>
-
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {/* Filtros de Data */}
                 <div className="bg-card rounded-lg border border-border p-6 card-shadow mb-8">

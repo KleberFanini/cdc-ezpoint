@@ -16,9 +16,9 @@ import {
     AlertTriangle,
     CheckCircle2,
     Briefcase,
+    Gift,
     TrendingUp,
-    TrendingDown,
-    Gift
+    TrendingDown
 } from 'lucide-react';
 import { format, subMonths } from 'date-fns';
 
@@ -58,11 +58,16 @@ export default function InterjornadaPage() {
     const router = useRouter();
 
     const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
+    const [funcionariosFiltrados, setFuncionariosFiltrados] = useState<Funcionario[]>([]);
     const [funcionarioSelecionado, setFuncionarioSelecionado] = useState<string>('');
     const [analise, setAnalise] = useState<AnaliseInterjornada | null>(null);
     const [loading, setLoading] = useState(false);
     const [loadingFuncionarios, setLoadingFuncionarios] = useState(true);
     const [error, setError] = useState('');
+    const [departamentos, setDepartamentos] = useState<string[]>([]);
+    const [cargos, setCargos] = useState<string[]>([]);
+    const [filtroDepartamento, setFiltroDepartamento] = useState<string>('');
+    const [filtroCargo, setFiltroCargo] = useState<string>('');
 
     // Filtros de data
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'));
@@ -77,6 +82,63 @@ export default function InterjornadaPage() {
         carregarFuncionarios();
     }, [isAuthenticated, router]);
 
+    // 🔥 Atualizar lista de funcionários filtrados quando os filtros mudarem
+    useEffect(() => {
+        if (funcionarios.length > 0) {
+            let filtrados = [...funcionarios];
+
+            // Filtrar por departamento
+            if (filtroDepartamento) {
+                filtrados = filtrados.filter(f => f.departamento === filtroDepartamento);
+            }
+
+            // Filtrar por cargo
+            if (filtroCargo) {
+                filtrados = filtrados.filter(f => f.cargo === filtroCargo);
+            }
+
+            setFuncionariosFiltrados(filtrados);
+
+            // Se o funcionário selecionado não estiver mais na lista filtrada, limpar seleção
+            if (funcionarioSelecionado && !filtrados.some(f => String(f.id) === String(funcionarioSelecionado))) {
+                setFuncionarioSelecionado('');
+            }
+        }
+    }, [funcionarios, filtroDepartamento, filtroCargo, funcionarioSelecionado]);
+
+    // 🔥 Extrair departamentos e cargos únicos dos funcionários
+    useEffect(() => {
+        if (funcionarios.length > 0) {
+            // Extrair departamentos únicos
+            const deps = new Set<string>();
+            funcionarios.forEach(f => {
+                if (f.departamento) deps.add(f.departamento);
+            });
+            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
+
+            // Extrair cargos únicos (sem filtro de departamento ainda)
+            const cargosSet = new Set<string>();
+            funcionarios.forEach(f => {
+                if (f.cargo) cargosSet.add(f.cargo);
+            });
+            setCargos(Array.from(cargosSet).sort((a, b) => a.localeCompare(b)));
+        }
+    }, [funcionarios]);
+
+    // 🔥 Obter cargos do departamento selecionado
+    const getCargosPorDepartamento = useCallback(() => {
+        if (!filtroDepartamento) return cargos;
+
+        const cargosDoDepartamento = new Set<string>();
+        funcionarios
+            .filter(f => f.departamento === filtroDepartamento)
+            .forEach(f => {
+                if (f.cargo) cargosDoDepartamento.add(f.cargo);
+            });
+
+        return Array.from(cargosDoDepartamento).sort((a, b) => a.localeCompare(b));
+    }, [funcionarios, filtroDepartamento, cargos]);
+
     const carregarFuncionarios = async () => {
         if (!token || !empresa) return;
 
@@ -85,7 +147,9 @@ export default function InterjornadaPage() {
             const url = `/api/funcionarios?token=${encodeURIComponent(token)}&empresa=${encodeURIComponent(empresa)}&ocultarDemitidos=true`;
             const response = await fetch(url);
             const data = await response.json();
-            setFuncionarios(data.listaDeFuncionarios || []);
+            const listaFuncionarios = data.listaDeFuncionarios || [];
+            setFuncionarios(listaFuncionarios);
+            setFuncionariosFiltrados(listaFuncionarios);
         } catch (err) {
             console.error('Erro ao carregar funcionários:', err);
             setError('Erro ao carregar lista de funcionários');
@@ -102,7 +166,7 @@ export default function InterjornadaPage() {
         setAnalise(null);
 
         try {
-            const funcionario = funcionarios.find(f => String(f.id) === String(funcionarioSelecionado));
+            const funcionario = funcionariosFiltrados.find(f => String(f.id) === String(funcionarioSelecionado));
             if (!funcionario) {
                 throw new Error(`Funcionário com ID ${funcionarioSelecionado} não encontrado`);
             }
@@ -116,7 +180,6 @@ export default function InterjornadaPage() {
                 throw new Error(data.error || `Erro HTTP: ${response.status}`);
             }
 
-            // Processar os dados
             const dias = data.dias || [];
 
             let totalDiurnas = 0;
@@ -189,7 +252,7 @@ export default function InterjornadaPage() {
         } finally {
             setLoading(false);
         }
-    }, [token, empresa, funcionarioSelecionado, dataInicio, dataFim, funcionarios]);
+    }, [token, empresa, funcionarioSelecionado, dataInicio, dataFim, funcionariosFiltrados]);
 
     // Utilitários
     const converterHoraParaMinutos = (hora: string): number => {
@@ -201,7 +264,8 @@ export default function InterjornadaPage() {
     const formatarMinutosParaHora = (minutos: number): string => {
         const horas = Math.floor(minutos / 60);
         const mins = Math.round(minutos % 60);
-        return `${horas.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+        const sinal = minutos < 0 ? '-' : '';
+        return `${sinal}${Math.abs(horas).toString().padStart(2, '0')}:${Math.abs(mins).toString().padStart(2, '0')}`;
     };
 
     const formatarData = (dataStr: string) => {
@@ -213,13 +277,11 @@ export default function InterjornadaPage() {
         }
     };
 
-    // 🔥 Função para processar batidas (pode vir como string ou array)
     const formatarBatidas = (batidas: string | string[] | undefined): string => {
         if (!batidas) return '-';
         if (Array.isArray(batidas)) {
             return batidas.join(' - ');
         }
-        // Se for string, assume que é espaço separado
         return batidas.split(' ').join(' - ');
     };
 
@@ -238,6 +300,8 @@ export default function InterjornadaPage() {
         return null;
     }
 
+    const cargosFiltrados = getCargosPorDepartamento();
+
     return (
         <div className="space-y-6">
             <div className="flex justify-between items-center">
@@ -247,6 +311,7 @@ export default function InterjornadaPage() {
             {/* Filtros */}
             <div className="bg-card rounded-lg border border-border p-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    {/* Filtro de Funcionário (agora baseado nos filtros acima) */}
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-foreground mb-1">
                             Funcionário
@@ -255,15 +320,20 @@ export default function InterjornadaPage() {
                             className="w-full h-10 rounded-md border border-input bg-background px-3 py-2"
                             value={funcionarioSelecionado}
                             onChange={(e) => setFuncionarioSelecionado(e.target.value)}
-                            disabled={loadingFuncionarios}
+                            disabled={loadingFuncionarios || funcionariosFiltrados.length === 0}
                         >
                             <option value="">Selecione um funcionário</option>
-                            {funcionarios.map((f) => (
+                            {funcionariosFiltrados.map((f) => (
                                 <option key={f.id} value={f.id}>
-                                    {f.matricula} - {f.nome}
+                                    {f.matricula} - {f.nome} {f.cargo ? `(${f.cargo})` : ''}
                                 </option>
                             ))}
                         </select>
+                        {funcionariosFiltrados.length === 0 && !loadingFuncionarios && (
+                            <p className="text-xs text-destructive mt-1">
+                                Nenhum funcionário encontrado com os filtros selecionados
+                            </p>
+                        )}
                     </div>
 
                     <div>
@@ -290,9 +360,69 @@ export default function InterjornadaPage() {
                             max={format(new Date(), 'yyyy-MM-dd')}
                         />
                     </div>
+
+                    {/* Filtro de Departamento */}
+                    <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                            Departamento
+                        </label>
+                        <select
+                            className="w-full h-10 rounded-md border border-input bg-background px-3 py-2"
+                            value={filtroDepartamento}
+                            onChange={(e) => {
+                                setFiltroDepartamento(e.target.value);
+                                setFiltroCargo('');
+                            }}
+                            disabled={loadingFuncionarios}
+                        >
+                            <option value="">Todos os departamentos</option>
+                            {departamentos.map((depto) => (
+                                <option key={depto} value={depto}>
+                                    {depto}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Filtro de Cargo (dependente do departamento) */}
+                    <div>
+                        <label className="block text-sm font-medium text-foreground mb-1">
+                            Cargo
+                        </label>
+                        <select
+                            className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                            value={filtroCargo}
+                            onChange={(e) => setFiltroCargo(e.target.value)}
+                            disabled={loadingFuncionarios || !filtroDepartamento}
+                        >
+                            <option value="">{filtroDepartamento ? 'Todos os cargos' : 'Selecione um departamento primeiro'}</option>
+                            {cargosFiltrados.map((cargo) => (
+                                <option key={cargo} value={cargo}>
+                                    {cargo}
+                                </option>
+                            ))}
+                        </select>
+                        {!filtroDepartamento && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                                Selecione um departamento para filtrar cargos
+                            </p>
+                        )}
+                    </div>
                 </div>
 
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex justify-end gap-2">
+                    {/* Botão para limpar filtros */}
+                    <Button
+                        variant="outline"
+                        onClick={() => {
+                            setFiltroDepartamento('');
+                            setFiltroCargo('');
+                            setFuncionarioSelecionado('');
+                        }}
+                    >
+                        Limpar Filtros
+                    </Button>
+
                     <Button
                         onClick={analisarInterjornada}
                         disabled={!funcionarioSelecionado || loading}
@@ -312,27 +442,28 @@ export default function InterjornadaPage() {
                 </div>
             )}
 
-            {/* Resultados da Análise */}
+            {/* Resultados da Análise (mesmo código anterior) */}
             {analise && analise.dias.length > 0 ? (
                 <div className="space-y-6">
-                    {/* Cards de Resumo */}
+                    {/* Primeira Linha de Cards (4 cards) */}
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
                                 <Briefcase className="h-5 w-5 text-purple-500" />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Carga Horária Total</p>
+                                    <p className="text-sm text-muted-foreground">Carga Horária</p>
                                     <p className="text-2xl font-semibold">
                                         {formatarMinutosParaHora(analise.totalCargaHoraria)}
                                     </p>
                                 </div>
                             </div>
                         </div>
+
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
                                 <Sun className="h-5 w-5 text-yellow-500" />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Total Horas Diurnas</p>
+                                    <p className="text-sm text-muted-foreground">Horas Diurnas</p>
                                     <p className="text-2xl font-semibold">
                                         {formatarMinutosParaHora(analise.totalHorasDiurnas)}
                                     </p>
@@ -344,7 +475,7 @@ export default function InterjornadaPage() {
                             <div className="flex items-center gap-3">
                                 <Moon className="h-5 w-5 text-blue-500" />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Total Horas Noturnas</p>
+                                    <p className="text-sm text-muted-foreground">Horas Noturnas</p>
                                     <p className="text-2xl font-semibold">
                                         {formatarMinutosParaHora(analise.totalHorasNoturnas)}
                                     </p>
@@ -356,7 +487,7 @@ export default function InterjornadaPage() {
                             <div className="flex items-center gap-3">
                                 <AlertTriangle className="h-5 w-5 text-destructive" />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Dias com Excesso</p>
+                                    <p className="text-sm text-muted-foreground">Dias c/ Excesso</p>
                                     <p className="text-2xl font-semibold text-destructive">
                                         {analise.diasComExcesso}
                                     </p>
@@ -365,20 +496,8 @@ export default function InterjornadaPage() {
                         </div>
                     </div>
 
-                    {/* Segunda Linha de Cards */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                        <div className="bg-card rounded-lg border p-6">
-                            <div className="flex items-center gap-3">
-                                <Clock className="h-5 w-5 text-purple-500" />
-                                <div>
-                                    <p className="text-sm text-muted-foreground">Média Interjornada</p>
-                                    <p className="text-2xl font-semibold">
-                                        {analise.mediaInterjornada}
-                                    </p>
-                                </div>
-                            </div>
-                        </div>
-
+                    {/* Segunda Linha de Cards (3 cards) */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
                                 <TrendingUp className="h-5 w-5 text-green-500" />
@@ -416,7 +535,7 @@ export default function InterjornadaPage() {
                         </div>
                     </div>
 
-                    {/* Tabela Detalhada - AGORA COM MAIS COLUNAS */}
+                    {/* Tabela Detalhada */}
                     <div className="bg-card rounded-lg border overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full">

@@ -40,19 +40,25 @@ export default function DashboardPage() {
     const [paginaAtual, setPaginaAtual] = useState(1);
     const [totalPaginas, setTotalPaginas] = useState(1);
 
-    // 🔥 TODOS os saldos em um único objeto
+    // TODOS os saldos em um único objeto
     const [todosSaldos, setTodosSaldos] = useState<Record<string, string>>({});
     const [saldosCarregados, setSaldosCarregados] = useState(false);
     const [loadingSaldos, setLoadingSaldos] = useState(false);
 
     const [ultimasBatidas, setUltimasBatidas] = useState<Record<string, Batida>>({});
     const [loadingBatidas, setLoadingBatidas] = useState(false);
+
+    // FILTROS
     const [filtroNome, setFiltroNome] = useState('');
     const [filtroDepartamento, setFiltroDepartamento] = useState('');
+    const [filtroCargo, setFiltroCargo] = useState('');
     const [filtroSaldo, setFiltroSaldo] = useState('todos');
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 2), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(new Date(), 'yyyy-MM-dd'));
+
+    // LISTAS PARA OS SELECTS
     const [departamentos, setDepartamentos] = useState<string[]>([]);
+    const [cargos, setCargos] = useState<string[]>([]);
 
     const carregarFuncionarios = useCallback(async (forceRefresh = false) => {
         if (!token || !empresa) return;
@@ -76,10 +82,16 @@ export default function DashboardPage() {
 
             // Extrair departamentos únicos
             const deps = new Set<string>();
+            // Extrair cargos únicos
+            const cargosSet = new Set<string>();
+
             funcionarios.forEach((func: Funcionario) => {
                 if (func.departamento) deps.add(func.departamento);
+                if (func.cargo) cargosSet.add(func.cargo);
             });
+
             setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
+            setCargos(Array.from(cargosSet).sort((a, b) => a.localeCompare(b)));
 
         } catch (err: any) {
             console.error('Erro:', err);
@@ -95,7 +107,7 @@ export default function DashboardPage() {
         }
     }, [token, empresa, logout]);
 
-    // 🔥 Carregar TODOS os saldos de uma vez (em lotes)
+    // Carregar TODOS os saldos de uma vez (em lotes)
     const carregarTodosSaldos = useCallback(async () => {
         if (!token || !empresa || todosFuncionarios.length === 0 || saldosCarregados) return;
 
@@ -194,7 +206,21 @@ export default function DashboardPage() {
         }
     }, [token, empresa, dataInicio, dataFim]);
 
-    // 🔥 Aplicar filtros USANDO todos os saldos
+    // Obter cargos do departamento selecionado
+    const getCargosPorDepartamento = useCallback(() => {
+        if (!filtroDepartamento) return cargos;
+
+        const cargosDoDepartamento = new Set<string>();
+        todosFuncionarios
+            .filter(f => f.departamento === filtroDepartamento)
+            .forEach(f => {
+                if (f.cargo) cargosDoDepartamento.add(f.cargo);
+            });
+
+        return Array.from(cargosDoDepartamento).sort((a, b) => a.localeCompare(b));
+    }, [todosFuncionarios, filtroDepartamento, cargos]);
+
+    // Aplicar filtros USANDO todos os saldos
     const aplicarFiltrosEPaginar = useCallback(() => {
         setLoadingPagina(true);
 
@@ -214,7 +240,14 @@ export default function DashboardPage() {
             );
         }
 
-        // 🔥 FILTRO PROGRESSIVO: se não tem todos os saldos, mostra aviso mas filtra o que já tem
+        // Filtro por cargo
+        if (filtroCargo) {
+            filtrados = filtrados.filter(func =>
+                func.cargo === filtroCargo
+            );
+        }
+
+        // FILTRO PROGRESSIVO: se não tem todos os saldos, mostra aviso mas filtra o que já tem
         if (filtroSaldo !== 'todos') {
             if (!saldosCarregados) {
                 console.log(`Filtrando com dados parciais: ${Object.keys(todosSaldos).length}/${todosFuncionarios.length} saldos`);
@@ -250,7 +283,7 @@ export default function DashboardPage() {
 
         setFuncionariosPagina(funcionariosDaPagina);
         setLoadingPagina(false);
-    }, [todosFuncionarios, filtroNome, filtroDepartamento, filtroSaldo, todosSaldos, saldosCarregados, paginaAtual]);
+    }, [todosFuncionarios, filtroNome, filtroDepartamento, filtroCargo, filtroSaldo, todosSaldos, saldosCarregados, paginaAtual]);
 
     // Carregar todos os saldos quando os funcionários forem carregados
     useEffect(() => {
@@ -271,7 +304,7 @@ export default function DashboardPage() {
         if (todosFuncionarios.length > 0) {
             aplicarFiltrosEPaginar();
         }
-    }, [paginaAtual, filtroNome, filtroDepartamento, filtroSaldo, todosFuncionarios, todosSaldos, saldosCarregados, aplicarFiltrosEPaginar]);
+    }, [paginaAtual, filtroNome, filtroDepartamento, filtroCargo, filtroSaldo, todosFuncionarios, todosSaldos, saldosCarregados, aplicarFiltrosEPaginar]);
 
     // Verificar autenticação
     useEffect(() => {
@@ -299,6 +332,7 @@ export default function DashboardPage() {
     const handleLimparFiltros = () => {
         setFiltroNome('');
         setFiltroDepartamento('');
+        setFiltroCargo(''); // Limpa cargo também
         setFiltroSaldo('todos');
         setDataInicio(format(subMonths(new Date(), 2), 'yyyy-MM-dd'));
         setDataFim(format(new Date(), 'yyyy-MM-dd'));
@@ -344,6 +378,8 @@ export default function DashboardPage() {
         }
     };
 
+    const cargosFiltrados = getCargosPorDepartamento();
+
     return (
         <div className="min-h-screen bg-background">
             <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
@@ -386,6 +422,7 @@ export default function DashboardPage() {
                     <h2 className="text-lg font-semibold text-foreground mb-4">Filtrar Funcionários</h2>
 
                     <form onSubmit={(e) => e.preventDefault()} className="space-y-4">
+                        {/* Primeira linha: Nome e Departamento */}
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label className="block text-sm font-medium text-foreground mb-1">
@@ -406,7 +443,10 @@ export default function DashboardPage() {
                                 <select
                                     className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                                     value={filtroDepartamento}
-                                    onChange={(e) => setFiltroDepartamento(e.target.value)}
+                                    onChange={(e) => {
+                                        setFiltroDepartamento(e.target.value);
+                                        setFiltroCargo(''); // Limpa cargo ao mudar departamento
+                                    }}
                                 >
                                     <option value="">Todos os departamentos</option>
                                     {departamentos.map((depto) => (
@@ -418,49 +458,80 @@ export default function DashboardPage() {
                             </div>
                         </div>
 
-                        {/* Filtro de Saldo */}
-                        <div>
-                            <label className="block text-sm font-medium text-foreground mb-2">
-                                Saldo de Horas
-                            </label>
-                            <div className="flex gap-4">
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="radio"
-                                        name="saldo"
-                                        value="todos"
-                                        checked={filtroSaldo === 'todos'}
-                                        onChange={(e) => setFiltroSaldo(e.target.value)}
-                                        className="h-4 w-4 text-primary border-border focus:ring-primary"
-                                    />
-                                    <span className="text-sm text-foreground">Todos</span>
+                        {/* Segunda linha: Saldo e Cargo lado a lado */}
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {/* Filtro de Saldo */}
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-2">
+                                    Saldo de Horas
                                 </label>
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="radio"
-                                        name="saldo"
-                                        value="positivo"
-                                        checked={filtroSaldo === 'positivo'}
-                                        onChange={(e) => setFiltroSaldo(e.target.value)}
-                                        className="h-4 w-4 text-primary border-border focus:ring-primary"
-                                    />
-                                    <span className="text-sm text-green-600 font-medium">Positivo</span>
+                                <div className="flex gap-4">
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="saldo"
+                                            value="todos"
+                                            checked={filtroSaldo === 'todos'}
+                                            onChange={(e) => setFiltroSaldo(e.target.value)}
+                                            className="h-4 w-4 text-primary border-border focus:ring-primary"
+                                        />
+                                        <span className="text-sm text-foreground">Todos</span>
+                                    </label>
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="saldo"
+                                            value="positivo"
+                                            checked={filtroSaldo === 'positivo'}
+                                            onChange={(e) => setFiltroSaldo(e.target.value)}
+                                            className="h-4 w-4 text-primary border-border focus:ring-primary"
+                                        />
+                                        <span className="text-sm text-green-600 font-medium">Positivo</span>
+                                    </label>
+                                    <label className="flex items-center gap-2">
+                                        <input
+                                            type="radio"
+                                            name="saldo"
+                                            value="negativo"
+                                            checked={filtroSaldo === 'negativo'}
+                                            onChange={(e) => setFiltroSaldo(e.target.value)}
+                                            className="h-4 w-4 text-primary border-border focus:ring-primary"
+                                        />
+                                        <span className="text-sm text-destructive font-medium">Negativo</span>
+                                    </label>
+                                </div>
+                            </div>
+
+                            {/* Filtro de Cargo */}
+                            <div>
+                                <label className="block text-sm font-medium text-foreground mb-1">
+                                    Cargo
                                 </label>
-                                <label className="flex items-center gap-2">
-                                    <input
-                                        type="radio"
-                                        name="saldo"
-                                        value="negativo"
-                                        checked={filtroSaldo === 'negativo'}
-                                        onChange={(e) => setFiltroSaldo(e.target.value)}
-                                        className="h-4 w-4 text-primary border-border focus:ring-primary"
-                                    />
-                                    <span className="text-sm text-destructive font-medium">Negativo</span>
-                                </label>
+                                <select
+                                    className="w-full h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                    value={filtroCargo}
+                                    onChange={(e) => setFiltroCargo(e.target.value)}
+                                    disabled={!filtroDepartamento}
+                                >
+                                    <option value="">
+                                        {filtroDepartamento ? 'Todos os cargos' : 'Selecione um departamento primeiro'}
+                                    </option>
+                                    {cargosFiltrados.map((cargo) => (
+                                        <option key={cargo} value={cargo}>
+                                            {cargo}
+                                        </option>
+                                    ))}
+                                </select>
+                                {!filtroDepartamento && (
+                                    <p className="text-xs text-muted-foreground mt-1">
+                                        Selecione um departamento para filtrar cargos
+                                    </p>
+                                )}
                             </div>
                         </div>
 
-                        <div className="flex gap-2 justify-end">
+                        {/* Botão Limpar abaixo do cargo */}
+                        <div className="flex justify-end">
                             <Button type="button" variant="outline" onClick={handleLimparFiltros}>
                                 Limpar
                             </Button>
@@ -612,7 +683,7 @@ export default function DashboardPage() {
                                     <div className="text-sm text-muted-foreground">
                                         Mostrando <span className="font-medium">{funcionariosPagina.length}</span> de{' '}
                                         <span className="font-medium">{funcionariosFiltrados.length}</span> funcionários
-                                        {filtroNome || filtroDepartamento || filtroSaldo !== 'todos' ? ' (filtrados)' : ''}
+                                        {filtroNome || filtroDepartamento || filtroCargo || filtroSaldo !== 'todos' ? ' (filtrados)' : ''}
                                     </div>
                                     <div className="flex gap-2">
                                         <Button

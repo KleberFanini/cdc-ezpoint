@@ -19,7 +19,7 @@ import {
     Gift,
     TrendingUp,
     TrendingDown,
-    Coins // 🔥 Novo ícone para banco de horas
+    Coins // Novo ícone para banco de horas
 } from 'lucide-react';
 import { format, subMonths } from 'date-fns';
 
@@ -34,7 +34,7 @@ interface EspelhoDia {
     horario?: string;
     cargaHoraria?: string;
     horasAbonadas?: string;
-    bancoDeHoras?: string; // 🔥 Mantido apenas banco de horas
+    bancoDeHoras?: string;
 }
 
 interface AnaliseInterjornada {
@@ -44,7 +44,7 @@ interface AnaliseInterjornada {
     totalHorasNoturnas: number;
     totalCargaHoraria: number;
     totalHorasAbonadas: number;
-    totalBancoDeHoras: number; // 🔥 Total de banco de horas
+    totalBancoDeHoras: number;
     diasComExcesso: number;
     diasComJornadaNoturna: number;
     mediaInterjornada: string;
@@ -70,10 +70,6 @@ export default function InterjornadaPage() {
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(new Date(), 'yyyy-MM-dd'));
 
-    // ============================================
-    // FUNÇÕES PARA REGRAS DE JORNADA
-    // ============================================
-
     // Função para obter informações da jornada baseada no departamento/cargo
     const getJornadaInfo = (funcionario: Funcionario): {
         base: number;
@@ -87,7 +83,6 @@ export default function InterjornadaPage() {
         if (cargo) {
             const cargoUpper = cargo.toUpperCase();
 
-            // AUXILIAR ADM-APRENDIZ (Jovem Aprendiz)
             if (cargoUpper.includes('AUXILIAR ADM-APRENDIZ') || cargoUpper.includes('APRENDIZ')) {
                 return {
                     base: 4,
@@ -188,41 +183,109 @@ export default function InterjornadaPage() {
     };
 
     // Função para obter o texto de status do excesso
-    const getStatusExcesso = (diurnas: string, noturnas: string, batidas: string | string[] | undefined, funcionario: Funcionario) => {
-        const totalMinutos = converterHoraParaMinutos(diurnas) + converterHoraParaMinutos(noturnas);
-        const jornadaEsperada = getJornadaEsperadaMinutos(funcionario);
-        const limiteComExtra = jornadaEsperada + 120;
-        const { base, temIntervalo, intervaloMinutos } = getJornadaInfo(funcionario);
+    const getStatusExcesso = (diurnas: string, noturnas: string, batidas: string | string[] | undefined, funcionario: Funcionario, cargaHorariaDia?: string, horasAbonadas?: string) => {
+        const totalTrabalhadoMinutos = converterHoraParaMinutos(diurnas) + converterHoraParaMinutos(noturnas);
+        const abonadasMinutos = converterHoraParaMinutos(horasAbonadas || '00:00');
+        const cargaDiaMinutos = converterHoraParaMinutos(cargaHorariaDia || '00:00');
 
-        const intervaloValido = verificarIntervalo(batidas, funcionario);
-        const horasFormatadas = formatarMinutosParaHora(totalMinutos);
+        // Total considerado para cumprimento da jornada (trabalhado + abonadas)
+        const totalConsideradoMinutos = totalTrabalhadoMinutos + abonadasMinutos;
 
-        if (temIntervalo && !intervaloValido) {
-            return {
-                cor: 'text-destructive',
-                icone: AlertTriangle,
-                texto: `Intervalo inválido (<${intervaloMinutos}min)`
-            };
-        }
+        const horasTrabalhadasFormatadas = formatarMinutosParaHora(totalTrabalhadoMinutos);
+        const abonadasFormatadas = formatarMinutosParaHora(abonadasMinutos);
+        const cargaFormatada = formatarMinutosParaHora(cargaDiaMinutos);
 
-        if (totalMinutos > limiteComExtra) {
+        // Se não tem carga horária definida para o dia, não faz comparação
+        if (cargaDiaMinutos === 0) {
             return {
-                cor: 'text-destructive',
-                icone: AlertTriangle,
-                texto: `Excesso (>${base}h+2h)`
-            };
-        } else {
-            return {
-                cor: 'text-blue-600',
+                cor: 'text-muted-foreground',
                 icone: Clock,
-                texto: `${horasFormatadas}h (esperado: ${base}h)`
+                texto: 'Sem carga definida'
             };
         }
-    };
 
-    // ============================================
-    // FIM DAS FUNÇÕES
-    // ============================================
+        // Verifica se o total considerado (trabalhado + abonadas) é igual à carga horária
+        if (totalConsideradoMinutos === cargaDiaMinutos) {
+            // Se tiver horas abonadas, mostra que foi compensado com abono
+            if (abonadasMinutos > 0) {
+                return {
+                    cor: 'text-green-600',
+                    icone: CheckCircle2,
+                    texto: `OK (${horasTrabalhadasFormatadas}h + ${abonadasFormatadas}h abono)`
+                };
+            }
+            return {
+                cor: 'text-green-600',
+                icone: CheckCircle2,
+                texto: `OK (${horasTrabalhadasFormatadas}h)`
+            };
+        }
+
+        // Verifica se o total considerado é maior que a carga horária
+        if (totalConsideradoMinutos > cargaDiaMinutos) {
+            const extraMinutos = totalConsideradoMinutos - cargaDiaMinutos;
+            const extraFormatado = formatarMinutosParaHora(extraMinutos);
+
+            // Se tiver horas abonadas, mostra que o abono ajudou a compensar
+            if (abonadasMinutos > 0) {
+                if (extraMinutos > 120) {
+                    return {
+                        cor: 'text-destructive',
+                        icone: AlertTriangle,
+                        texto: `Excesso (+${extraFormatado}h c/ ${abonadasFormatadas}h abono)`
+                    };
+                }
+                return {
+                    cor: 'text-yellow-600',
+                    icone: TrendingUp,
+                    texto: `${cargaFormatada} + ${extraFormatado} extra (${abonadasFormatadas}h abono)`
+                };
+            }
+
+            // Sem horas abonadas
+            if (extraMinutos > 120) {
+                return {
+                    cor: 'text-destructive',
+                    icone: AlertTriangle,
+                    texto: `Excesso (+${extraFormatado}h)`
+                };
+            }
+
+            return {
+                cor: 'text-yellow-600',
+                icone: TrendingUp,
+                texto: `${cargaFormatada} + ${extraFormatado} extra`
+            };
+        }
+
+        // Verifica se o total considerado é menor que a carga horária
+        if (totalConsideradoMinutos < cargaDiaMinutos) {
+            const faltaMinutos = cargaDiaMinutos - totalConsideradoMinutos;
+            const faltaFormatado = formatarMinutosParaHora(faltaMinutos);
+
+            // Se tiver horas abonadas mas ainda assim faltou
+            if (abonadasMinutos > 0) {
+                return {
+                    cor: 'text-orange-500',
+                    icone: TrendingDown,
+                    texto: `-${faltaFormatado} falta (${abonadasFormatadas}h abono)`
+                };
+            }
+
+            return {
+                cor: 'text-orange-500',
+                icone: TrendingDown,
+                texto: `-${faltaFormatado} falta`
+            };
+        }
+
+        // Fallback
+        return {
+            cor: 'text-green-600',
+            icone: CheckCircle2,
+            texto: `OK (${horasTrabalhadasFormatadas}h)`
+        };
+    };
 
     // Carregar lista de funcionários
     useEffect(() => {
@@ -303,6 +366,21 @@ export default function InterjornadaPage() {
         }
     };
 
+    const verificarExcessoNoDia = (diurnas: string, noturnas: string, cargaHorariaDia?: string, horasAbonadas?: string): boolean => {
+        const totalTrabalhadoMinutos = converterHoraParaMinutos(diurnas) + converterHoraParaMinutos(noturnas);
+        const abonadasMinutos = converterHoraParaMinutos(horasAbonadas || '00:00');
+        const cargaDiaMinutos = converterHoraParaMinutos(cargaHorariaDia || '00:00');
+
+        // Se não tem carga definida, não considera excesso
+        if (cargaDiaMinutos === 0) return false;
+
+        // Total considerado (trabalhado + abonadas)
+        const totalConsideradoMinutos = totalTrabalhadoMinutos + abonadasMinutos;
+
+        // Verifica se o total considerado excede a carga em mais de 2h (120 minutos)
+        return totalConsideradoMinutos > cargaDiaMinutos + 120;
+    };
+
     const analisarInterjornada = useCallback(async () => {
         if (!token || !empresa || !funcionarioSelecionado) return;
 
@@ -331,7 +409,7 @@ export default function InterjornadaPage() {
             let totalNoturnas = 0;
             let totalCargaHoraria = 0;
             let totalHorasAbonadas = 0;
-            let totalBancoDeHoras = 0; // 🔥 Acumulador para banco de horas
+            let totalBancoDeHoras = 0;
             let diasExcesso = 0;
             let diasNoturnos = 0;
             let somaInterjornada = 0;
@@ -342,18 +420,36 @@ export default function InterjornadaPage() {
                 const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
                 const carga = converterHoraParaMinutos(dia.cargaHoraria || '00:00');
                 const abonadas = converterHoraParaMinutos(dia.horasAbonadas || '00:00');
-                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00'); // 🔥 Banco de horas do dia
+                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
                 const totalDia = diurnas + noturnas;
 
                 totalDiurnas += diurnas;
                 totalNoturnas += noturnas;
                 totalCargaHoraria += carga;
                 totalHorasAbonadas += abonadas;
-                totalBancoDeHoras += bancoHoras; // 🔥 Acumula banco de horas
+                totalBancoDeHoras += bancoHoras;
 
-                if (verificarExcesso(totalDia, funcionario) ||
-                    (getJornadaInfo(funcionario).temIntervalo && !verificarIntervalo(dia.batidas, funcionario))) {
+                // 🔥 Nova verificação de excesso usando a carga horária do dia
+                if (verificarExcessoNoDia(
+                    dia.horasTrabalhadasDiurnas,
+                    dia.horasTrabalhadasNoturnas,
+                    dia.cargaHoraria,
+                    dia.horasAbonadas
+                )) {
                     diasExcesso++;
+                }
+
+                // Verificação de intervalo (mantém)
+                if (getJornadaInfo(funcionario).temIntervalo && !verificarIntervalo(dia.batidas, funcionario)) {
+                    // Se já foi contado como excesso, não conta novamente
+                    if (!verificarExcessoNoDia(
+                        dia.horasTrabalhadasDiurnas,
+                        dia.horasTrabalhadasNoturnas,
+                        dia.cargaHoraria,
+                        dia.horasAbonadas
+                    )) {
+                        diasExcesso++;
+                    }
                 }
 
                 if (noturnas > 0) {
@@ -378,7 +474,7 @@ export default function InterjornadaPage() {
                 totalHorasNoturnas: totalNoturnas,
                 totalCargaHoraria,
                 totalHorasAbonadas,
-                totalBancoDeHoras, // 🔥 Inclui no estado
+                totalBancoDeHoras, // Inclui no estado
                 diasComExcesso: diasExcesso,
                 diasComJornadaNoturna: diasNoturnos,
                 mediaInterjornada
@@ -647,7 +743,7 @@ export default function InterjornadaPage() {
                             </div>
                         </div>
 
-                        {/* 🔥 NOVO CARD: Banco de Horas Total */}
+                        {/* NOVO CARD: Banco de Horas Total */}
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
                                 <Coins className={`h-5 w-5 ${bancoInfo?.cor}`} />
@@ -700,7 +796,9 @@ export default function InterjornadaPage() {
                                             dia.horasTrabalhadasDiurnas,
                                             dia.horasTrabalhadasNoturnas,
                                             dia.batidas,
-                                            analise.funcionario
+                                            analise.funcionario,
+                                            dia.cargaHoraria,
+                                            dia.horasAbonadas
                                         );
                                         const StatusIcon = status.icone;
 

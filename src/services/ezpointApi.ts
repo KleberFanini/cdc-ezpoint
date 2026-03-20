@@ -16,6 +16,7 @@ export interface Funcionario {
     departamento: string;
     ctps: string;
     sexo: string;
+    idHorario?: number;
 }
 
 export interface FuncionariosResponse {

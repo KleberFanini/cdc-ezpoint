@@ -18,7 +18,8 @@ import {
     Briefcase,
     Gift,
     TrendingUp,
-    TrendingDown
+    TrendingDown,
+    Coins // 🔥 Novo ícone para banco de horas
 } from 'lucide-react';
 import { format, subMonths } from 'date-fns';
 
@@ -32,10 +33,8 @@ interface EspelhoDia {
     interjornada: string;
     horario?: string;
     cargaHoraria?: string;
-    extraDiurna?: string;
-    extraNoturna?: string;
     horasAbonadas?: string;
-    bancoDeHoras?: string;
+    bancoDeHoras?: string; // 🔥 Mantido apenas banco de horas
 }
 
 interface AnaliseInterjornada {
@@ -44,10 +43,8 @@ interface AnaliseInterjornada {
     totalHorasDiurnas: number;
     totalHorasNoturnas: number;
     totalCargaHoraria: number;
-    totalExtraDiurna: number;
-    totalExtraNoturna: number;
     totalHorasAbonadas: number;
-    totalBancoDeHoras: number;
+    totalBancoDeHoras: number; // 🔥 Total de banco de horas
     diasComExcesso: number;
     diasComJornadaNoturna: number;
     mediaInterjornada: string;
@@ -73,6 +70,160 @@ export default function InterjornadaPage() {
     const [dataInicio, setDataInicio] = useState(format(subMonths(new Date(), 1), 'yyyy-MM-dd'));
     const [dataFim, setDataFim] = useState(format(new Date(), 'yyyy-MM-dd'));
 
+    // ============================================
+    // FUNÇÕES PARA REGRAS DE JORNADA
+    // ============================================
+
+    // Função para obter informações da jornada baseada no departamento/cargo
+    const getJornadaInfo = (funcionario: Funcionario): {
+        base: number;
+        temIntervalo: boolean;
+        nomeJornada: string;
+        intervaloMinutos: number;
+    } => {
+        const { departamento, cargo } = funcionario;
+
+        // Verificar por cargo primeiro (tem prioridade)
+        if (cargo) {
+            const cargoUpper = cargo.toUpperCase();
+
+            // AUXILIAR ADM-APRENDIZ (Jovem Aprendiz)
+            if (cargoUpper.includes('AUXILIAR ADM-APRENDIZ') || cargoUpper.includes('APRENDIZ')) {
+                return {
+                    base: 4,
+                    temIntervalo: true,
+                    intervaloMinutos: 15,
+                    nomeJornada: 'Auxiliar Adm Aprendiz (4h c/ 15min intervalo)'
+                };
+            }
+
+            if (cargoUpper.includes('ENFERMEIRA')) {
+                return {
+                    base: 4,
+                    temIntervalo: true,
+                    intervaloMinutos: 15,
+                    nomeJornada: 'Enfermeira (4h c/ 15min intervalo)'
+                };
+            }
+            if (cargoUpper.includes('ASSISTENTE SOCIAL')) {
+                return {
+                    base: 6,
+                    temIntervalo: true,
+                    intervaloMinutos: 15,
+                    nomeJornada: 'Assistente Social (6h c/ 15min intervalo)'
+                };
+            }
+            if (cargoUpper.includes('PLANTONISTA')) {
+                return {
+                    base: 11,
+                    temIntervalo: false,
+                    intervaloMinutos: 0,
+                    nomeJornada: 'Plantonista (11h)'
+                };
+            }
+        }
+
+        // Verificar por departamento
+        if (departamento) {
+            const deptUpper = departamento.toUpperCase();
+            if (['ATM', 'PPCAAM', 'CDC', 'FINANCEIRO', 'RH', 'ATITUDE', 'PPVIDA'].includes(deptUpper)) {
+                return {
+                    base: 8,
+                    temIntervalo: false,
+                    intervaloMinutos: 0,
+                    nomeJornada: '8h'
+                };
+            }
+        }
+
+        // Padrão
+        return {
+            base: 8,
+            temIntervalo: false,
+            intervaloMinutos: 0,
+            nomeJornada: '8h (padrão)'
+        };
+    };
+
+    // Função para calcular a jornada esperada em minutos
+    const getJornadaEsperadaMinutos = (funcionario: Funcionario): number => {
+        const { base } = getJornadaInfo(funcionario);
+        return base * 60;
+    };
+
+    // Função para verificar se o intervalo foi respeitado
+    const verificarIntervalo = (batidas: string | string[] | undefined, funcionario: Funcionario): boolean => {
+        const { temIntervalo, intervaloMinutos } = getJornadaInfo(funcionario);
+
+        if (!temIntervalo || !batidas) return true;
+
+        const listaBatidas = typeof batidas === 'string'
+            ? batidas.split(' ').filter(b => b.trim())
+            : batidas;
+
+        if (listaBatidas.length < 3) return true;
+
+        const segundaBatida = listaBatidas[1];
+        const terceiraBatida = listaBatidas[2];
+
+        if (!segundaBatida || !terceiraBatida) return true;
+
+        const converterParaMinutos = (hora: string): number => {
+            const [h, m] = hora.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const inicioIntervalo = converterParaMinutos(segundaBatida);
+        const fimIntervalo = converterParaMinutos(terceiraBatida);
+        const duracao = fimIntervalo - inicioIntervalo;
+
+        return duracao >= intervaloMinutos;
+    };
+
+    // Função para verificar se há excesso (jornada + 2h)
+    const verificarExcesso = (horasTrabalhadasMinutos: number, funcionario: Funcionario): boolean => {
+        const jornadaEsperada = getJornadaEsperadaMinutos(funcionario);
+        const limiteComExtra = jornadaEsperada + 120;
+        return horasTrabalhadasMinutos > limiteComExtra;
+    };
+
+    // Função para obter o texto de status do excesso
+    const getStatusExcesso = (diurnas: string, noturnas: string, batidas: string | string[] | undefined, funcionario: Funcionario) => {
+        const totalMinutos = converterHoraParaMinutos(diurnas) + converterHoraParaMinutos(noturnas);
+        const jornadaEsperada = getJornadaEsperadaMinutos(funcionario);
+        const limiteComExtra = jornadaEsperada + 120;
+        const { base, temIntervalo, intervaloMinutos } = getJornadaInfo(funcionario);
+
+        const intervaloValido = verificarIntervalo(batidas, funcionario);
+        const horasFormatadas = formatarMinutosParaHora(totalMinutos);
+
+        if (temIntervalo && !intervaloValido) {
+            return {
+                cor: 'text-destructive',
+                icone: AlertTriangle,
+                texto: `Intervalo inválido (<${intervaloMinutos}min)`
+            };
+        }
+
+        if (totalMinutos > limiteComExtra) {
+            return {
+                cor: 'text-destructive',
+                icone: AlertTriangle,
+                texto: `Excesso (>${base}h+2h)`
+            };
+        } else {
+            return {
+                cor: 'text-blue-600',
+                icone: Clock,
+                texto: `${horasFormatadas}h (esperado: ${base}h)`
+            };
+        }
+    };
+
+    // ============================================
+    // FIM DAS FUNÇÕES
+    // ============================================
+
     // Carregar lista de funcionários
     useEffect(() => {
         if (!isAuthenticated) {
@@ -82,50 +233,44 @@ export default function InterjornadaPage() {
         carregarFuncionarios();
     }, [isAuthenticated, router]);
 
-    // 🔥 Atualizar lista de funcionários filtrados quando os filtros mudarem
+    // Atualizar lista de funcionários filtrados quando os filtros mudarem
     useEffect(() => {
         if (funcionarios.length > 0) {
             let filtrados = [...funcionarios];
 
-            // Filtrar por departamento
             if (filtroDepartamento) {
                 filtrados = filtrados.filter(f => f.departamento === filtroDepartamento);
             }
 
-            // Filtrar por cargo
             if (filtroCargo) {
                 filtrados = filtrados.filter(f => f.cargo === filtroCargo);
             }
 
             setFuncionariosFiltrados(filtrados);
 
-            // Se o funcionário selecionado não estiver mais na lista filtrada, limpar seleção
             if (funcionarioSelecionado && !filtrados.some(f => String(f.id) === String(funcionarioSelecionado))) {
                 setFuncionarioSelecionado('');
             }
         }
     }, [funcionarios, filtroDepartamento, filtroCargo, funcionarioSelecionado]);
 
-    // 🔥 Extrair departamentos e cargos únicos dos funcionários
+    // Extrair departamentos e cargos únicos dos funcionários
     useEffect(() => {
         if (funcionarios.length > 0) {
-            // Extrair departamentos únicos
             const deps = new Set<string>();
+            const cargosSet = new Set<string>();
+
             funcionarios.forEach(f => {
                 if (f.departamento) deps.add(f.departamento);
-            });
-            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
-
-            // Extrair cargos únicos (sem filtro de departamento ainda)
-            const cargosSet = new Set<string>();
-            funcionarios.forEach(f => {
                 if (f.cargo) cargosSet.add(f.cargo);
             });
+
+            setDepartamentos(Array.from(deps).sort((a, b) => a.localeCompare(b)));
             setCargos(Array.from(cargosSet).sort((a, b) => a.localeCompare(b)));
         }
     }, [funcionarios]);
 
-    // 🔥 Obter cargos do departamento selecionado
+    // Obter cargos do departamento selecionado
     const getCargosPorDepartamento = useCallback(() => {
         if (!filtroDepartamento) return cargos;
 
@@ -185,10 +330,8 @@ export default function InterjornadaPage() {
             let totalDiurnas = 0;
             let totalNoturnas = 0;
             let totalCargaHoraria = 0;
-            let totalExtraDiurna = 0;
-            let totalExtraNoturna = 0;
             let totalHorasAbonadas = 0;
-            let totalBancoDeHoras = 0;
+            let totalBancoDeHoras = 0; // 🔥 Acumulador para banco de horas
             let diasExcesso = 0;
             let diasNoturnos = 0;
             let somaInterjornada = 0;
@@ -198,21 +341,18 @@ export default function InterjornadaPage() {
                 const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
                 const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
                 const carga = converterHoraParaMinutos(dia.cargaHoraria || '00:00');
-                const extraDiurna = converterHoraParaMinutos(dia.extraDiurna || '00:00');
-                const extraNoturna = converterHoraParaMinutos(dia.extraNoturna || '00:00');
                 const abonadas = converterHoraParaMinutos(dia.horasAbonadas || '00:00');
-                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
+                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00'); // 🔥 Banco de horas do dia
                 const totalDia = diurnas + noturnas;
 
                 totalDiurnas += diurnas;
                 totalNoturnas += noturnas;
                 totalCargaHoraria += carga;
-                totalExtraDiurna += extraDiurna;
-                totalExtraNoturna += extraNoturna;
                 totalHorasAbonadas += abonadas;
-                totalBancoDeHoras += bancoHoras;
+                totalBancoDeHoras += bancoHoras; // 🔥 Acumula banco de horas
 
-                if (totalDia > 600) {
+                if (verificarExcesso(totalDia, funcionario) ||
+                    (getJornadaInfo(funcionario).temIntervalo && !verificarIntervalo(dia.batidas, funcionario))) {
                     diasExcesso++;
                 }
 
@@ -237,10 +377,8 @@ export default function InterjornadaPage() {
                 totalHorasDiurnas: totalDiurnas,
                 totalHorasNoturnas: totalNoturnas,
                 totalCargaHoraria,
-                totalExtraDiurna,
-                totalExtraNoturna,
                 totalHorasAbonadas,
-                totalBancoDeHoras,
+                totalBancoDeHoras, // 🔥 Inclui no estado
                 diasComExcesso: diasExcesso,
                 diasComJornadaNoturna: diasNoturnos,
                 mediaInterjornada
@@ -262,10 +400,10 @@ export default function InterjornadaPage() {
     };
 
     const formatarMinutosParaHora = (minutos: number): string => {
-        const horas = Math.floor(minutos / 60);
-        const mins = Math.round(minutos % 60);
+        const horas = Math.floor(Math.abs(minutos) / 60);
+        const mins = Math.round(Math.abs(minutos) % 60);
         const sinal = minutos < 0 ? '-' : '';
-        return `${sinal}${Math.abs(horas).toString().padStart(2, '0')}:${Math.abs(mins).toString().padStart(2, '0')}`;
+        return `${sinal}${horas.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
     };
 
     const formatarData = (dataStr: string) => {
@@ -285,14 +423,13 @@ export default function InterjornadaPage() {
         return batidas.split(' ').join(' - ');
     };
 
-    const getStatusExcesso = (diurnas: string, noturnas: string) => {
-        const total = converterHoraParaMinutos(diurnas) + converterHoraParaMinutos(noturnas);
-        if (total > 600) {
-            return { cor: 'text-destructive', icone: AlertTriangle, texto: 'Excesso (>10h)' };
-        } else if (total === 600) {
-            return { cor: 'text-green-600', icone: CheckCircle2, texto: 'Exato (10h)' };
+    const formatarBancoHoras = (minutos: number): { valor: string; cor: string } => {
+        if (minutos > 0) {
+            return { valor: formatarMinutosParaHora(minutos), cor: 'text-green-600' };
+        } else if (minutos < 0) {
+            return { valor: formatarMinutosParaHora(minutos), cor: 'text-destructive' };
         } else {
-            return { cor: 'text-blue-600', icone: Clock, texto: `${formatarMinutosParaHora(total)}h` };
+            return { valor: '00:00', cor: 'text-muted-foreground' };
         }
     };
 
@@ -301,6 +438,7 @@ export default function InterjornadaPage() {
     }
 
     const cargosFiltrados = getCargosPorDepartamento();
+    const bancoInfo = analise ? formatarBancoHoras(analise.totalBancoDeHoras) : null;
 
     return (
         <div className="space-y-6">
@@ -311,7 +449,7 @@ export default function InterjornadaPage() {
             {/* Filtros */}
             <div className="bg-card rounded-lg border border-border p-6">
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-                    {/* Filtro de Funcionário (agora baseado nos filtros acima) */}
+                    {/* Filtro de Funcionário */}
                     <div className="md:col-span-2">
                         <label className="block text-sm font-medium text-foreground mb-1">
                             Funcionário
@@ -384,7 +522,7 @@ export default function InterjornadaPage() {
                         </select>
                     </div>
 
-                    {/* Filtro de Cargo (dependente do departamento) */}
+                    {/* Filtro de Cargo */}
                     <div>
                         <label className="block text-sm font-medium text-foreground mb-1">
                             Cargo
@@ -411,7 +549,6 @@ export default function InterjornadaPage() {
                 </div>
 
                 <div className="mt-4 flex justify-end gap-2">
-                    {/* Botão para limpar filtros */}
                     <Button
                         variant="outline"
                         onClick={() => {
@@ -442,7 +579,7 @@ export default function InterjornadaPage() {
                 </div>
             )}
 
-            {/* Resultados da Análise (mesmo código anterior) */}
+            {/* Resultados da Análise */}
             {analise && analise.dias.length > 0 ? (
                 <div className="space-y-6">
                     {/* Primeira Linha de Cards (4 cards) */}
@@ -496,27 +633,28 @@ export default function InterjornadaPage() {
                         </div>
                     </div>
 
-                    {/* Segunda Linha de Cards (3 cards) */}
+                    {/* Segunda Linha de Cards (3 cards) - REMOVIDOS EXTRA DIURNA/NOTURNA */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
-                                <TrendingUp className="h-5 w-5 text-green-500" />
+                                <Clock className="h-5 w-5 text-purple-500" />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Extra Diurna</p>
-                                    <p className="text-2xl font-semibold text-green-600">
-                                        {formatarMinutosParaHora(analise.totalExtraDiurna)}
+                                    <p className="text-sm text-muted-foreground">Média Interjornada</p>
+                                    <p className="text-2xl font-semibold">
+                                        {analise.mediaInterjornada}
                                     </p>
                                 </div>
                             </div>
                         </div>
 
+                        {/* 🔥 NOVO CARD: Banco de Horas Total */}
                         <div className="bg-card rounded-lg border p-6">
                             <div className="flex items-center gap-3">
-                                <TrendingDown className="h-5 w-5 text-blue-500" />
+                                <Coins className={`h-5 w-5 ${bancoInfo?.cor}`} />
                                 <div>
-                                    <p className="text-sm text-muted-foreground">Extra Noturna</p>
-                                    <p className="text-2xl font-semibold text-blue-600">
-                                        {formatarMinutosParaHora(analise.totalExtraNoturna)}
+                                    <p className="text-sm text-muted-foreground">Banco de Horas</p>
+                                    <p className={`text-2xl font-semibold ${bancoInfo?.cor}`}>
+                                        {bancoInfo?.valor}
                                     </p>
                                 </div>
                             </div>
@@ -535,7 +673,7 @@ export default function InterjornadaPage() {
                         </div>
                     </div>
 
-                    {/* Tabela Detalhada */}
+                    {/* Tabela Detalhada - REMOVIDAS EXTRA DIURNA/NOTURNA */}
                     <div className="bg-card rounded-lg border overflow-hidden">
                         <div className="overflow-x-auto">
                             <table className="w-full">
@@ -545,9 +683,8 @@ export default function InterjornadaPage() {
                                         <th className="text-left p-4 text-sm font-medium">Batidas</th>
                                         <th className="text-left p-4 text-sm font-medium">Diurnas</th>
                                         <th className="text-left p-4 text-sm font-medium">Noturnas</th>
-                                        <th className="text-left p-4 text-sm font-medium">Extra Diurna</th>
-                                        <th className="text-left p-4 text-sm font-medium">Extra Noturna</th>
                                         <th className="text-left p-4 text-sm font-medium">Abonadas</th>
+                                        <th className="text-left p-4 text-sm font-medium">Banco de Horas</th>
                                         <th className="text-left p-4 text-sm font-medium">Carga Horária</th>
                                         <th className="text-left p-4 text-sm font-medium">Status</th>
                                         <th className="text-left p-4 text-sm font-medium">Interjornada</th>
@@ -557,8 +694,14 @@ export default function InterjornadaPage() {
                                     {analise.dias.map((dia, index) => {
                                         const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas);
                                         const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas);
-                                        const total = diurnas + noturnas;
-                                        const status = getStatusExcesso(dia.horasTrabalhadasDiurnas, dia.horasTrabalhadasNoturnas);
+                                        const bancoMinutos = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
+                                        const bancoFormatado = formatarBancoHoras(bancoMinutos);
+                                        const status = getStatusExcesso(
+                                            dia.horasTrabalhadasDiurnas,
+                                            dia.horasTrabalhadasNoturnas,
+                                            dia.batidas,
+                                            analise.funcionario
+                                        );
                                         const StatusIcon = status.icone;
 
                                         return (
@@ -575,14 +718,13 @@ export default function InterjornadaPage() {
                                                 <td className="p-4 text-sm">
                                                     {dia.horasTrabalhadasNoturnas || '00:00'}
                                                 </td>
-                                                <td className="p-4 text-sm text-green-600">
-                                                    {dia.extraDiurna || '00:00'}
-                                                </td>
-                                                <td className="p-4 text-sm text-blue-600">
-                                                    {dia.extraNoturna || '00:00'}
-                                                </td>
                                                 <td className="p-4 text-sm text-orange-600">
                                                     {dia.horasAbonadas || '00:00'}
+                                                </td>
+                                                <td className="p-4 text-sm">
+                                                    <span className={`font-mono font-medium ${bancoFormatado.cor}`}>
+                                                        {bancoFormatado.valor}
+                                                    </span>
                                                 </td>
                                                 <td className="p-4 text-sm font-mono">
                                                     {dia.cargaHoraria || '00:00'}

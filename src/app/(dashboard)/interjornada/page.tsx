@@ -48,6 +48,8 @@ interface AnaliseInterjornada {
     diasComExcesso: number;
     diasComJornadaNoturna: number;
     mediaInterjornada: string;
+    totalFinaisSemana: number;
+    totalFinaisSemanaTrabalhados: number;
 }
 
 export default function InterjornadaPage() {
@@ -414,6 +416,8 @@ export default function InterjornadaPage() {
             let diasNoturnos = 0;
             let somaInterjornada = 0;
             let diasComInterjornada = 0;
+            let totalFinaisSemana = 0;
+            let totalFinaisSemanaTrabalhados = 0;
 
             dias.forEach((dia: EspelhoDia) => {
                 const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
@@ -422,6 +426,7 @@ export default function InterjornadaPage() {
                 const abonadas = converterHoraParaMinutos(dia.horasAbonadas || '00:00');
                 const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
                 const totalDia = diurnas + noturnas;
+                const ehWeekend = isWeekend(dia.data);
 
                 totalDiurnas += diurnas;
                 totalNoturnas += noturnas;
@@ -429,7 +434,6 @@ export default function InterjornadaPage() {
                 totalHorasAbonadas += abonadas;
                 totalBancoDeHoras += bancoHoras;
 
-                // 🔥 Nova verificação de excesso usando a carga horária do dia
                 if (verificarExcessoNoDia(
                     dia.horasTrabalhadasDiurnas,
                     dia.horasTrabalhadasNoturnas,
@@ -439,9 +443,16 @@ export default function InterjornadaPage() {
                     diasExcesso++;
                 }
 
-                // Verificação de intervalo (mantém)
+                if (ehWeekend) {
+                    totalFinaisSemana++;
+                    const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
+                    const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
+                    if (diurnas > 0 || noturnas > 0) {
+                        totalFinaisSemanaTrabalhados++;
+                    }
+                }
+
                 if (getJornadaInfo(funcionario).temIntervalo && !verificarIntervalo(dia.batidas, funcionario)) {
-                    // Se já foi contado como excesso, não conta novamente
                     if (!verificarExcessoNoDia(
                         dia.horasTrabalhadasDiurnas,
                         dia.horasTrabalhadasNoturnas,
@@ -474,10 +485,12 @@ export default function InterjornadaPage() {
                 totalHorasNoturnas: totalNoturnas,
                 totalCargaHoraria,
                 totalHorasAbonadas,
-                totalBancoDeHoras, // Inclui no estado
+                totalBancoDeHoras,
                 diasComExcesso: diasExcesso,
                 diasComJornadaNoturna: diasNoturnos,
-                mediaInterjornada
+                mediaInterjornada,
+                totalFinaisSemana,
+                totalFinaisSemanaTrabalhados
             });
 
         } catch (err: any) {
@@ -488,7 +501,6 @@ export default function InterjornadaPage() {
         }
     }, [token, empresa, funcionarioSelecionado, dataInicio, dataFim, funcionariosFiltrados]);
 
-    // Utilitários
     const converterHoraParaMinutos = (hora: string): number => {
         if (!hora || hora === '00:00') return 0;
         const [h, m] = hora.split(':').map(Number);
@@ -511,12 +523,55 @@ export default function InterjornadaPage() {
         }
     };
 
-    const formatarBatidas = (batidas: string | string[] | undefined): string => {
-        if (!batidas) return '-';
-        if (Array.isArray(batidas)) {
-            return batidas.join(' - ');
+    const getDiaSemana = (dataStr: string): string => {
+        try {
+            const [dia, mes, ano] = dataStr.split('/').map(Number);
+            const data = new Date(ano, mes - 1, dia);
+            const diasSemana = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+            return diasSemana[data.getDay()];
+        } catch {
+            return '';
         }
-        return batidas.split(' ').join(' - ');
+    };
+
+    const isWeekend = (dataStr: string): boolean => {
+        try {
+            const [dia, mes, ano] = dataStr.split('/').map(Number);
+            const data = new Date(ano, mes - 1, dia);
+            const diaSemana = data.getDay();
+
+            return diaSemana === 0 || diaSemana === 6;
+        } catch {
+            return false;
+        }
+    };
+
+    const formatarBatidas = (dia: EspelhoDia): { texto: string; cor: string; isWeekend: boolean } => {
+        if (dia.horario === 'FOLGA') {
+            return { texto: 'FOLGA', cor: 'text-green-600 font-medium', isWeekend: isWeekend(dia.data) };
+        }
+
+        const ehWeekend = isWeekend(dia.data);
+
+        if (!dia.batidas) {
+            if (ehWeekend) {
+                return { texto: 'FINAL DE SEMANA', cor: 'text-purple-600 font-medium', isWeekend: true };
+            }
+            return { texto: '-', cor: 'text-muted-foreground', isWeekend: false };
+        }
+
+        let batidasTexto = '';
+        if (Array.isArray(dia.batidas)) {
+            batidasTexto = dia.batidas.join(' - ');
+        } else {
+            batidasTexto = dia.batidas.split(' ').join(' - ');
+        }
+
+        return {
+            texto: batidasTexto,
+            cor: 'text-foreground',
+            isWeekend: ehWeekend
+        };
     };
 
     const formatarBancoHoras = (minutos: number): { valor: string; cor: string } => {
@@ -792,6 +847,10 @@ export default function InterjornadaPage() {
                                         const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas);
                                         const bancoMinutos = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
                                         const bancoFormatado = formatarBancoHoras(bancoMinutos);
+                                        const batidasFormatado = formatarBatidas(dia);
+                                        const diaSemana = getDiaSemana(dia.data);
+                                        const ehWeekend = diaSemana === 'Sábado' || diaSemana === 'Domingo';
+
                                         const status = getStatusExcesso(
                                             dia.horasTrabalhadasDiurnas,
                                             dia.horasTrabalhadasNoturnas,
@@ -803,12 +862,21 @@ export default function InterjornadaPage() {
                                         const StatusIcon = status.icone;
 
                                         return (
-                                            <tr key={index} className="hover:bg-muted/50">
+                                            <tr key={index} className={`hover:bg-muted/50 ${batidasFormatado.isWeekend ? 'bg-purple-50/30' : ''}`}>
                                                 <td className="p-4 text-sm">
-                                                    {formatarData(dia.data)}
+                                                    <div>
+                                                        <span className={ehWeekend ? 'font-semibold' : ''}>
+                                                            {formatarData(dia.data)}
+                                                        </span>
+                                                        <span className={`text-xs block ${ehWeekend ? 'text-purple-600' : 'text-muted-foreground'}`}>
+                                                            {diaSemana}
+                                                        </span>
+                                                    </div>
                                                 </td>
                                                 <td className="p-4 text-sm font-mono max-w-xs truncate">
-                                                    {formatarBatidas(dia.batidas)}
+                                                    <span className={batidasFormatado.cor}>
+                                                        {batidasFormatado.texto}
+                                                    </span>
                                                 </td>
                                                 <td className="p-4 text-sm">
                                                     {dia.horasTrabalhadasDiurnas || '00:00'}

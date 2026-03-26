@@ -45,6 +45,10 @@ interface AnaliseInterjornada {
     totalCargaHoraria: number;
     totalHorasAbonadas: number;
     totalBancoDeHoras: number;
+    totalExtraDiurna: number;
+    totalExtraNoturna: number;
+    totalAtraso: number;
+    totalFalta: number;
     diasComExcesso: number;
     diasComJornadaNoturna: number;
     mediaInterjornada: string;
@@ -406,12 +410,20 @@ export default function InterjornadaPage() {
             }
 
             const dias = data.dias || [];
+            const totalColunas = data.totalColunas || {};
 
-            let totalDiurnas = 0;
-            let totalNoturnas = 0;
-            let totalCargaHoraria = 0;
-            let totalHorasAbonadas = 0;
-            let totalBancoDeHoras = 0;
+            // 🔥 TODOS OS TOTAIS VEM DO totalColunas DA API
+            const totalBancoDeHoras = converterHoraParaMinutos(totalColunas.bancoDeHoras || '00:00');
+            const totalCargaHoraria = converterHoraParaMinutos(totalColunas.cargaHoraria || '00:00');
+            const totalHorasDiurnas = converterHoraParaMinutos(totalColunas.horasTrabalhadasDiurnas || '00:00');
+            const totalHorasNoturnas = converterHoraParaMinutos(totalColunas.horasTrabalhadasNoturnas || '00:00');
+            const totalHorasAbonadas = converterHoraParaMinutos(totalColunas.horasAbonadas || '00:00');
+            const totalExtraDiurna = converterHoraParaMinutos(totalColunas.extraDiurna || '00:00');
+            const totalExtraNoturna = converterHoraParaMinutos(totalColunas.extraNoturna || '00:00');
+            const totalAtraso = converterHoraParaMinutos(totalColunas.atraso || '00:00');
+            const totalFalta = converterHoraParaMinutos(totalColunas.falta || '00:00');
+
+            // Contagem de dias com excesso
             let diasExcesso = 0;
             let diasNoturnos = 0;
             let somaInterjornada = 0;
@@ -422,18 +434,9 @@ export default function InterjornadaPage() {
             dias.forEach((dia: EspelhoDia) => {
                 const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
                 const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
-                const carga = converterHoraParaMinutos(dia.cargaHoraria || '00:00');
-                const abonadas = converterHoraParaMinutos(dia.horasAbonadas || '00:00');
-                const bancoHoras = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
-                const totalDia = diurnas + noturnas;
                 const ehWeekend = isWeekend(dia.data);
 
-                totalDiurnas += diurnas;
-                totalNoturnas += noturnas;
-                totalCargaHoraria += carga;
-                totalHorasAbonadas += abonadas;
-                totalBancoDeHoras += bancoHoras;
-
+                // Verifica excesso no dia
                 if (verificarExcessoNoDia(
                     dia.horasTrabalhadasDiurnas,
                     dia.horasTrabalhadasNoturnas,
@@ -443,15 +446,15 @@ export default function InterjornadaPage() {
                     diasExcesso++;
                 }
 
+                // Contagem de finais de semana
                 if (ehWeekend) {
                     totalFinaisSemana++;
-                    const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas || '00:00');
-                    const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas || '00:00');
                     if (diurnas > 0 || noturnas > 0) {
                         totalFinaisSemanaTrabalhados++;
                     }
                 }
 
+                // Verifica intervalo inválido
                 if (getJornadaInfo(funcionario).temIntervalo && !verificarIntervalo(dia.batidas, funcionario)) {
                     if (!verificarExcessoNoDia(
                         dia.horasTrabalhadasDiurnas,
@@ -463,10 +466,12 @@ export default function InterjornadaPage() {
                     }
                 }
 
+                // Contagem de dias com trabalho noturno
                 if (noturnas > 0) {
                     diasNoturnos++;
                 }
 
+                // Média de interjornada
                 const inter = converterHoraParaMinutos(dia.interjornada || '00:00');
                 if (inter > 0) {
                     somaInterjornada += inter;
@@ -481,11 +486,15 @@ export default function InterjornadaPage() {
             setAnalise({
                 funcionario,
                 dias,
-                totalHorasDiurnas: totalDiurnas,
-                totalHorasNoturnas: totalNoturnas,
-                totalCargaHoraria,
-                totalHorasAbonadas,
-                totalBancoDeHoras,
+                totalHorasDiurnas,      // 🔥 DA API
+                totalHorasNoturnas,     // 🔥 DA API
+                totalCargaHoraria,      // 🔥 DA API
+                totalHorasAbonadas,     // 🔥 DA API
+                totalBancoDeHoras,      // 🔥 DA API
+                totalExtraDiurna,       // 🔥 DA API
+                totalExtraNoturna,      // 🔥 DA API
+                totalAtraso,            // 🔥 DA API
+                totalFalta,             // 🔥 DA API
                 diasComExcesso: diasExcesso,
                 diasComJornadaNoturna: diasNoturnos,
                 mediaInterjornada,

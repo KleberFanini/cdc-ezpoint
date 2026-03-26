@@ -574,14 +574,35 @@ export default function InterjornadaPage() {
         };
     };
 
-    const formatarBancoHoras = (minutos: number): { valor: string; cor: string } => {
-        if (minutos > 0) {
-            return { valor: formatarMinutosParaHora(minutos), cor: 'text-green-600' };
-        } else if (minutos < 0) {
-            return { valor: formatarMinutosParaHora(minutos), cor: 'text-destructive' };
-        } else {
+    const formatarBancoHoras = (banco: string | number): { valor: string; cor: string } => {
+        // Se for número, converte para string no formato HH:MM
+        if (typeof banco === 'number') {
+            if (banco === 0) return { valor: '00:00', cor: 'text-muted-foreground' };
+
+            const isNegative = banco < 0;
+            const absMinutos = Math.abs(banco);
+            const horas = Math.floor(absMinutos / 60);
+            const minutos = absMinutos % 60;
+            const valorStr = `${horas.toString().padStart(2, '0')}:${minutos.toString().padStart(2, '0')}`;
+
+            return {
+                valor: isNegative ? `-${valorStr}` : valorStr,
+                cor: isNegative ? 'text-destructive' : 'text-green-600'
+            };
+        }
+
+        // Se for string, mantém o valor original
+        if (!banco || banco === '00:00') {
             return { valor: '00:00', cor: 'text-muted-foreground' };
         }
+
+        const isNegative = banco.startsWith('-');
+        const valorAbs = isNegative ? banco.substring(1) : banco;
+
+        return {
+            valor: isNegative ? `-${valorAbs}` : valorAbs,
+            cor: isNegative ? 'text-destructive' : 'text-green-600'
+        };
     };
 
     if (!isAuthenticated) {
@@ -846,7 +867,7 @@ export default function InterjornadaPage() {
                                         const diurnas = converterHoraParaMinutos(dia.horasTrabalhadasDiurnas);
                                         const noturnas = converterHoraParaMinutos(dia.horasTrabalhadasNoturnas);
                                         const bancoMinutos = converterHoraParaMinutos(dia.bancoDeHoras || '00:00');
-                                        const bancoFormatado = formatarBancoHoras(bancoMinutos);
+                                        const bancoFormatado = formatarBancoHoras(dia.bancoDeHoras || '00:00');
                                         const batidasFormatado = formatarBatidas(dia);
                                         const diaSemana = getDiaSemana(dia.data);
                                         const ehWeekend = diaSemana === 'Sábado' || diaSemana === 'Domingo';
